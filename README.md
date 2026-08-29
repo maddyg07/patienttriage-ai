@@ -79,7 +79,12 @@ claim, and the central ones carry a companion test that breaks the invariant
 deliberately to prove the check works. Two known gaps are pinned rather than
 deleted so they cannot be quietly forgotten.
 
-**9. It knows what to ask.** Rather than reporting a gap, the system prices
+**9. A person can be erased from it.** The audit log carries pseudonyms only,
+and the mapping to a real person lives in the one component with a delete
+operation. Erasure destroys that mapping while the hash chain stays intact — and
+we say plainly that what remains is pseudonymous, not anonymous.
+
+**10. It knows what to ask.** Rather than reporting a gap, the system prices
 every question it could ask by re-running the whole pipeline on each possible
 answer, and ranks them by whether the answer could change the band — not by how
 much they would raise confidence. Asking cannot lower anyone's acuity, and a
@@ -87,7 +92,7 @@ patient who cannot answer is routed to collateral sources rather than skipped.
 
 ## Status
 
-Built in phases. Currently at **Phase 15 — the test suite**.
+Built in phases. Currently at **Phase 16 — docs and privacy**.
 
 | Phase | | Status |
 |---|---|---|
@@ -106,8 +111,8 @@ Built in phases. Currently at **Phase 15 — the test suite**.
 | 13 | Nurse workflow | done |
 | 14 | Surge mode | done |
 | 15 | Test suite | done |
-| 16 | Docs & privacy | next |
-| 17 | Demo mode | |
+| 16 | Docs & privacy | done |
+| 17 | Demo mode | next |
 
 ## Running it
 
@@ -155,6 +160,7 @@ python -m scripts.run_triage --ask P019      # what turns on a single answer
 python -m scripts.run_triage --board         # the department board, in the terminal
 python -m scripts.run_triage --workflow      # a nurse working the board
 python -m scripts.run_triage --surge         # what breaks under 3x load
+python -m scripts.run_triage --privacy       # erasure against an append-only log
 python -m scripts.run_triage --stale P002    # confidence decaying while a patient waits
 python -m scripts.run_triage --hospital small_ed
 ```
@@ -1032,6 +1038,89 @@ repository says it does. They say nothing about whether that behaviour is
 clinically correct, and every threshold they assert against is a simulated
 demonstration value.
 
+## Privacy, and the conflict at the centre of it
+
+Phase 9 built an append-only, hash-chained log with **no update method and no
+delete method** — not disabled, not private, absent — and argued that the
+absence of those operations is the entire value of the artefact.
+
+Data protection law argues the opposite. The **DPDP Act 2023** and the **GDPR**
+both give a person the right to have their data erased. These cannot both be
+satisfied by deleting log lines, and pretending otherwise is how a prototype
+becomes an unlawful product.
+
+### How it resolves
+
+The log never holds a direct identifier. It holds a pseudonym, and the mapping
+to a real person lives in exactly one place — `IdentityVault` in
+`core/privacy.py`, the only class in this repository with a `forget()` method.
+
+```
+P014 has 20 entries in the log. The vault can name her.
+chain verifies: True
+
+vault.forget('P014')
+vault can name her : False
+entries remaining  : 20
+chain verifies     : True
+replay still works : True
+```
+
+Nothing was deleted and nothing needed to be. This is the standard resolution
+and it is **not a loophole** — it is why the log was designed to carry
+pseudonyms from Phase 9 rather than a fix retrofitted once the problem became
+inconvenient. That no direct identifier exists anywhere is asserted in
+`tests/test_privacy.py`, including a planted identifier that proves the scanner
+works.
+
+### Pseudonymisation is not anonymisation
+
+The most over-claimed thing in health data engineering, so it gets said plainly.
+What remains after erasure is an age, an arrival time, vital signs, conditions
+and an acuity timeline at **minute resolution**. For an unusual presentation in
+a small department on a known date, that is re-identifiable by anybody who was
+on shift — and is very likely still personal data.
+
+`reidentification_risk()` is a method living next to `forget()` so the claim and
+its qualification cannot drift apart.
+
+### What this phase did not build
+
+Named as **open**, not as future work with a tick beside it:
+
+- No access control, no encryption at rest, no DPIA
+- No digest anchoring — the log stays tamper-evident, not tamper-proof
+- **No audit of who *read* a record.** We log every write and not one read, and
+  unauthorised reading is what actually gets abused in hospital systems. This is
+  the largest gap.
+- Retention periods are documented and **enforced by nothing** —
+  `RetentionPolicy.enforced()` returns `False` and is a method so nothing can
+  quietly assume otherwise.
+- **Lawful basis: NOT ESTABLISHED**, deliberately rather than filled with a
+  plausible-sounding value. A test asserts the status string, so filling it in
+  requires deleting a test — a conversation rather than an edit.
+
+## Documentation
+
+The `docs/` line in the layout block was aspirational until this phase.
+
+| | |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | the pipeline, module boundaries, and a table of what each stage may do to a band |
+| [`docs/safety.md`](docs/safety.md) | the five safety properties and where each is checked |
+| [`docs/assumptions.md`](docs/assumptions.md) | every simulated number in one place, plus the **ESI cross-walk** |
+| [`docs/privacy.md`](docs/privacy.md) | the erasure resolution and the open gaps |
+| [`docs/limitations.md`](docs/limitations.md) | what real validation would require |
+
+The ESI cross-walk matters more than it sounds: **our L4 CODE is ESI 1** — the
+numbering runs the opposite way to the standard scale. That is why every surface
+in this system leads with the word (CODE / PULL / LOOK / WATCH) and shows the
+number second. It is the one place where a display convention is a safety
+decision.
+
+`docs/limitations.md` is longer than the list of things this system does well,
+which is the correct ratio for a prototype nobody has validated.
+
 ## The safety guard
 
 A weighted score is a good instrument for ranking and a bad one for absolutes.
@@ -1106,8 +1195,9 @@ override policy in `data/ratchet_config.json`, log settings in
 `data/simulation_config.json`, and the question bank and its ranking weights in
 `data/questions.json`, and clinician action policy in
 `data/workflow_config.json`, and capacity and deferral policy in
-`data/surge_config.json`. Nothing a judge might question is hard-coded in the
-engine.
+`data/surge_config.json`, and retention and export policy in
+`data/privacy_config.json`. Nothing a judge might question is hard-coded in the
+engine — `docs/assumptions.md` lists every one of them in a single table.
 
 Reassessment intervals and time-to-clinician targets both live in
 `data/hospitals/`, alongside bed counts and staffing, because that is what they
@@ -1159,5 +1249,7 @@ and a department optimising it could score perfectly without treating anybody.
 The surge figures come from replicating our own 24 patients, which is a load test
 and not a case mix, and they rest on an unvalidated three-minute reassessment
 cost; the deferral policy is a demonstration setting with no safe value, not a
-surge escalation protocol.
+surge escalation protocol. No lawful basis has been established, retention is
+documented and enforced by nothing, and there is no access control, no
+encryption at rest and no auditing of who reads a record.
 `docs/limitations.md` sets out what real validation would require.

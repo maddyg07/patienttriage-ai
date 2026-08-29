@@ -1,7 +1,7 @@
 """
 scripts/run_triage.py
 =====================
-Phase 14 verification. Scores all 24 synthetic patients, attaches confidence and
+Phase 16 verification. Scores all 24 synthetic patients, attaches confidence and
 a plausible band set to each, prints the ranked queue plus explanation and
 uncertainty panels, runs the whole roster through a simulated shift, and prices
 the next question worth asking each of them.
@@ -28,6 +28,7 @@ Run from the repository root:
     python -m scripts.run_triage --board        # the department board
     python -m scripts.run_triage --workflow     # a nurse working the board
     python -m scripts.run_triage --surge        # what breaks under 3x load
+    python -m scripts.run_triage --privacy      # erasure against an append-only log
 
 Run `python -m scripts.run_tests` for the safety argument as executable claims.
     python -m scripts.run_triage --stale P002   # confidence decaying while waiting
@@ -1092,6 +1093,145 @@ def show_surge(engine):
     print("  report a deferral count of zero and mean nothing by it.")
 
 
+def show_privacy(engine):
+    import json as _json
+    import tempfile
+    from pathlib import Path
+
+    from core.audit import AuditLog
+    from core.privacy import (
+        Exporter,
+        Identity,
+        IdentityVault,
+        RetentionPolicy,
+        explain_lawful_basis,
+        scan_for_direct_identifiers,
+    )
+    from core.ratchet import Ratchet
+
+    rule("PRIVACY  --  erasure against an append-only log")
+    print("  Phase 9 built a log with no update method and no delete method,")
+    print("  and argued that the absence of those operations is the whole value")
+    print("  of the artefact. Data protection law argues the opposite: the DPDP")
+    print("  Act 2023 and the GDPR both give a person the right to be erased.")
+    print()
+    print("  Those two positions cannot both be satisfied by deleting log")
+    print("  lines. Something has to give, and pretending otherwise is how a")
+    print("  prototype becomes an unlawful product.")
+
+    print("\n  1. THE LOG NEVER HELD A NAME")
+    with open("data/patients.json", "r", encoding="utf-8") as fh:
+        raw = _json.load(fh)["patients"]
+    leaks = []
+    for record in raw:
+        leaks += scan_for_direct_identifiers(record, record["patient_id"])
+    print(f"     direct identifier fields across {len(raw)} patients: {len(leaks)}")
+    print("     There is not a single name in this repository. That is not a")
+    print("     coincidence of synthetic data -- it is why the resolution below")
+    print("     works, and tests/test_privacy.py asserts it rather than")
+    print("     trusting it.")
+
+    print("\n  2. ERASING SOMEONE, WITH THE CHAIN INTACT")
+    with tempfile.TemporaryDirectory() as tmp:
+        log = AuditLog(path=Path(tmp) / "audit.jsonl")
+        clock = SimulationClock(engine, load_patients(),
+                                ratchet=Ratchet(audit=log))
+        clock.run()
+
+        vault = IdentityVault()
+        vault.enrol(Identity(pseudonym="P014", name="[a real person]",
+                             date_of_birth="1988-03-14",
+                             hospital_number="[a real number]"))
+
+        before_ok, _ = log.verify()
+        entries = len(log.for_patient("P014"))
+        print(f"     P014 has {entries} entries in the log. The vault can name her.")
+        print(f"     chain verifies: {before_ok}")
+
+        vault.forget("P014")
+
+        after_ok, _ = log.verify()
+        still = len(log.for_patient("P014"))
+        print()
+        print(f"     vault.forget('P014')")
+        print(f"     vault can name her : {vault.knows('P014')}")
+        print(f"     entries remaining  : {still}")
+        print(f"     chain verifies     : {after_ok}")
+        print(f"     replay still works : "
+              f"{'P014' in log.replay_bands()}")
+
+    print()
+    print("     Nothing was deleted from the log and nothing needed to be. The")
+    print("     entries describe the same events; they now describe a subject")
+    print("     nobody can name. This is the standard resolution and it is not")
+    print("     a loophole -- it is why the log was designed to carry")
+    print("     pseudonyms from Phase 9 rather than a fix retrofitted now.")
+
+    print("\n  3. THE SENTENCE THAT HAS TO GO WITH THAT")
+    for line in _wrap(IdentityVault.reidentification_risk(), 68):
+        print(f"     {line}")
+    print()
+    print("     Pseudonymisation is not anonymisation, and it is the most")
+    print("     over-claimed thing in health data engineering. The method is")
+    print("     called reidentification_risk() and lives next to forget() so")
+    print("     the two cannot drift apart.")
+
+    print("\n  4. RETENTION, AND WHAT WE HAVE NOT BUILT")
+    policy = RetentionPolicy()
+    findings = policy.review({"identity_map": 45.0, "audit_log": 400.0,
+                              "assessment_detail": 120.0})
+    for finding in findings:
+        state = (f"OVERDUE by {finding.overdue_by_days:.0f}d"
+                 if finding.overdue else "within limit")
+        print(f"     {finding.artefact:<20}{finding.age_days:>6.0f}d "
+              f"(limit {finding.limit_days:>5}d)   {state}")
+    print()
+    print(f"     policy enforced by code: {policy.enforced()}")
+    print()
+    print("     Three clocks, because the artefacts serve different purposes")
+    print("     and the shortest defensible period differs for each. And no")
+    print("     scheduler, no purge job, no expiry check anywhere. A retention")
+    print("     period nothing enforces is a document rather than a control,")
+    print("     and saying so beats a config value implying an automation we")
+    print("     do not have.")
+
+    print("\n  5. EXPORT")
+    exporter = Exporter()
+    exported = exporter.export_patient(raw[0])
+    dropped = sorted(set(raw[0]) - set(exported))
+    print(f"     dropped prototype-only fields: {dropped}")
+    old = dict(raw[0], age_years=97)
+    print(f"     age 97 exported as: {exporter.export_patient(old)['age_years']}")
+    print()
+    print("     Coarsening the oldest ages is the cheapest disclosure control")
+    print("     there is -- a single 97-year-old in a district hospital on a")
+    print("     given afternoon is identifiable by age alone -- and it is")
+    print("     nowhere near sufficient by itself. The exporter REFUSES to run")
+    print("     if a direct identifier field is present rather than stripping")
+    print("     it, because a record containing one is a bug upstream.")
+
+    print("\n  6. LAWFUL BASIS")
+    print(explain_lawful_basis())
+    print()
+    print("     NOT ESTABLISHED, deliberately, rather than a plausible-sounding")
+    print("     placeholder. A prototype on synthetic data has no lawful basis")
+    print("     question to answer, and writing 'legitimate interests' here")
+    print("     would create the appearance of an assessment nobody has done.")
+    print("     Those are decisions for a hospital's DPO, not for us.")
+
+    print("\n  WHAT THIS PHASE DID NOT BUILD")
+    print("  No access control. No encryption at rest. No audit of who READ a")
+    print("  record, which is the thing that actually gets abused in hospital")
+    print("  systems -- we log every write and not one read. No DPIA. No")
+    print("  anchoring of the log digest anywhere the writer does not control,")
+    print("  which Phase 9 already flagged and this phase has not fixed.")
+    print()
+    print("  Those are listed in docs/privacy.md as open, not as future work")
+    print("  with a tick next to it. The distinction matters: a gap named")
+    print("  honestly is something a deployment can plan around, and a gap")
+    print("  described as 'planned' is one somebody assumes is handled.")
+
+
 def show_rules(engine, patients):
     rule("THE SAFETY GUARD  --  every firing on the board")
     scored = [(p, engine.assess(p)) for p in patients]
@@ -1445,6 +1585,9 @@ def main():
     if args and args[0] == "--confidence":
         show_confidence_board(engine, load_patients())
         return
+    if args and args[0] == "--privacy":
+        show_privacy(engine)
+        return
     if args and args[0] == "--surge":
         show_surge(engine)
         return
@@ -1516,67 +1659,68 @@ def main():
     show_board(engine)
     show_workflow(engine)
     show_surge(engine)
+    show_privacy(engine)
 
-    rule("PHASE 14 RESULT  --  the assumption comes out")
-    print("  Phase 10 shipped a clock that fires every reassessment exactly")
-    print("  when due, and said in its own docstring that no real department")
-    print("  achieves that. Every number since -- detection latency, the")
-    print("  overdue panel, the escalations found on schedule -- has been the")
-    print("  optimistic case. simulation/surge.py removes the assumption.")
+    rule("PHASE 16 RESULT  --  the deferred questions, answered")
+    print("  Every phase since 9 has ended by saying that retention, access")
+    print("  control and lawful basis were Phase 16 and were not settled by")
+    print("  anything built so far. This is Phase 16, and the honest outcome is")
+    print("  that one of those is resolved, one is documented and unenforced,")
+    print("  and one is recorded as NOT ESTABLISHED on purpose.")
     print()
-    print("  CAPACITY CONSTRAINS OBSERVATION, NEVER ACUITY. Under load the")
-    print("  department cannot re-check everyone on schedule, and the tempting")
-    print("  answer is to relax the band thresholds so fewer patients come out")
-    print("  as PULL when there are no PULL beds. It would calm the board")
-    print("  immediately, make the patients no safer, and be invisible because")
-    print("  the arithmetic still looks principled. What degrades here is how")
-    print("  often we can LOOK. How sick we judge someone does not move, and")
-    print("  assert_invariants() raises if it ever does.")
+    print("  THE CONFLICT. Phase 9 built a log with no update method and no")
+    print("  delete method and argued the absence of those operations IS the")
+    print("  artefact. The DPDP Act 2023 and the GDPR both give a person the")
+    print("  right to be erased. Those cannot both be satisfied by deleting log")
+    print("  lines, and pretending otherwise is how a prototype becomes an")
+    print("  unlawful product.")
     print()
-    print("  That was settled in Phase 1 without anyone noticing:")
-    print("  data/hospitals/large_ed.json has carried the line \'Band cutoffs")
-    print("  are IDENTICAL across all three profiles by design\' since the first")
-    print("  commit. This phase turned that sentence into a mechanism.")
+    print("  THE RESOLUTION. The log never held a name. It holds a pseudonym,")
+    print("  and the mapping to a real person lives in exactly one class with")
+    print("  exactly one delete operation. forget() destroys the mapping; the")
+    print("  chain still verifies, replay still reconstructs the department,")
+    print("  and the entries describe a subject nobody can name. Not a")
+    print("  loophole -- it is why the log carried pseudonyms from Phase 9")
+    print("  rather than a fix retrofitted once the problem got inconvenient.")
     print()
-    print("  DEFERRED, NEVER DROPPED. A re-check that cannot happen goes back")
-    print("  in the queue and asks again. A deferred patient is one somebody")
-    print("  will get to; a dropped one is a patient nobody looks at again, and")
-    print("  a policy that quietly discarded its backlog would report a")
-    print("  deferral count of zero and mean nothing by it. At 3x load the")
-    print("  count is 80% and it is supposed to be ugly.")
+    print("  AND THE SENTENCE THAT GOES WITH IT. Pseudonymisation is not")
+    print("  anonymisation. What remains is an age, an arrival time, vitals,")
+    print("  conditions and an acuity timeline at minute resolution -- for an")
+    print("  unusual presentation in a small department on a known date, that")
+    print("  is re-identifiable by anyone who was on shift, and is very likely")
+    print("  still personal data. reidentification_risk() is a method living")
+    print("  next to forget() so the two cannot drift apart.")
     print()
-    print("  THE MEASUREMENT THAT CHANGED THE DESIGN. Reserving capacity for")
-    print("  the sickest patients is obviously correct and, on its own,")
-    print("  dangerous. The reserve-only policy spent the whole budget")
-    print("  re-checking patients whose band never moved and detected NOT ONE")
-    print("  of the fifteen deteriorations in the roster. P014 was never looked")
-    print("  at again. So the reserve now decays with lateness -- acuity goes")
-    print("  first, but nobody is forgotten.")
+    print("  WHAT WE DID NOT BUILD, named as open rather than as future work:")
+    print("  no access control, no encryption at rest, no DPIA, no digest")
+    print("  anchoring, no enforcement of any retention period -- and no audit")
+    print("  of who READ a record, which is the largest gap on the page,")
+    print("  because unauthorised reading is what actually gets abused in")
+    print("  hospital systems and we log every write and not one read.")
     print()
-    print("  Rationing observation by CURRENT ACUITY is rationing by what we")
-    print("  already know, and observation exists to find out what we do not.")
-    print("  The same mistake Phase 11 refused to make about questions.")
+    print("  A gap named honestly is something a deployment can plan around. A")
+    print("  gap described as planned is one somebody assumes is handled.")
     print()
-    print("  AND THERE IS NO SAFE SETTING. Sweeping the threshold trades one")
-    print("  failure for the other monotonically: no reserve finds 14 of 15")
-    print("  deteriorations and defers 81% of PULL re-checks; a hard reserve")
-    print("  protects those patients and finds 1. That is not a defect in the")
-    print("  mechanism, it is what being 3x oversubscribed actually costs. The")
-    print("  system\'s job is to make the choice explicit, set in advance by a")
-    print("  clinical governance lead and logged -- not discovered at 2am.")
+    print("  THE DOCS ARE NOW REAL. docs/architecture.md, safety.md,")
+    print("  assumptions.md, privacy.md and limitations.md existed only as a")
+    print("  line in the README layout block until this phase. assumptions.md")
+    print("  carries the ESI cross-walk core/enums.py has promised since Phase")
+    print("  1 -- and it matters, because our L4 is ESI 1 and a number read the")
+    print("  wrong way round in a clinical setting is a serious problem. That")
+    print("  is why every surface leads with the WORD and shows the number")
+    print("  second.")
     print()
-    print("  Still missing: the test suite (15), which is where every safety")
-    print("  claim this project has made becomes something that can go red --")
-    print("  the ratchet, the fairness counterfactual, the surge invariants,")
-    print("  and the log-replay completeness check.")
+    print("  limitations.md is longer than the list of things this system does")
+    print("  well, and that is the correct ratio for a prototype nobody has")
+    print("  validated.")
     print()
-    print("  ALL VALUES ARE SIMULATED and clinically unvalidated. The surge")
-    print("  roster is the authored roster REPLICATED with copies labelled as")
-    print("  copies: a fair load test, and useless as a statement about case")
-    print("  mix. Three minutes per reassessment is an assumption doing real")
-    print("  work in every capacity figure above and we cannot validate it.")
-    print("  This is not a surge escalation policy and no clinician has")
-    print("  reviewed any of it.\n")
+    print("  Still missing: demo mode (17), which is packaging rather than")
+    print("  capability -- a single scripted run that tells the story in order")
+    print("  without a human remembering fifteen flags.")
+    print()
+    print("  ALL VALUES ARE SIMULATED and clinically unvalidated. No lawful")
+    print("  basis has been established, no clinician has reviewed anything")
+    print("  here, and no retention period is enforced by code.\n")
 
 
 if __name__ == "__main__":

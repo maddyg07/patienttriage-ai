@@ -1,0 +1,44 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION SETTINGS. This is not a data protection policy, no lawyer has reviewed it, and no retention period below has been agreed with anybody. A real deployment sets these with a Data Protection Officer and a clinical governance lead.",
+
+  "_the_conflict_this_file_exists_to_resolve": "Phase 9 built an append-only, hash-chained audit log with no update method and no delete method, and argued that the absence of those operations is the whole value of the artefact. Data protection law argues the opposite: the DPDP Act 2023 in India and the GDPR in the EU both give a person the right to have their data erased, and both require that data is not kept longer than necessary. Those two positions cannot both be satisfied by deleting log lines. Something has to give, and pretending otherwise is how a prototype becomes an unlawful product.",
+
+  "_how_we_resolve_it": "The log never holds a direct identifier. It holds a pseudonym -- P014 -- and the mapping from that pseudonym to a real person lives in exactly one place, core/privacy.py's IdentityVault, which is the only component in this system with a delete operation. Erasing a person means destroying that mapping. The audit chain stays intact and verifiable, and the entries that remain describe a subject nobody can name. This is the standard resolution and it is not a loophole: it is the reason the log was designed to carry pseudonyms from Phase 9 onward rather than a fix retrofitted now.",
+
+  "_what_this_does_not_achieve": "PSEUDONYMISATION IS NOT ANONYMISATION, and the difference is the single most over-claimed thing in health data engineering. What remains after erasure is a timeline of ages, arrival times, vital signs, conditions, medications and acuity changes. For a rare presentation in a small department on a known date, that is re-identifiable by anyone who was there or who holds the department's own records. Under both the GDPR and the DPDP Act this residue is very likely still personal data. We therefore describe the vault as reducing re-identification risk, never as eliminating it, and docs/privacy.md says so at the top rather than in a footnote.",
+
+  "identity": {
+    "vault_holds": ["name", "date_of_birth", "hospital_number", "contact"],
+    "_vault_holds_note": "The direct identifiers a real deployment would need and this prototype does not have. data/patients.json contains none of them -- there is not a single name in this repository -- and tests/test_privacy.py asserts that, so the claim is checked rather than believed.",
+    "pseudonym_prefix": "P",
+    "erasure_is_irreversible": true
+  },
+
+  "retention": {
+    "identity_map_days": 30,
+    "audit_log_days": 2555,
+    "assessment_detail_days": 90,
+    "_retention_note": "Three different clocks on purpose, because the artefacts serve different purposes and the shortest defensible period is different for each. The identity map is operational and can go quickly. The audit log is a clinical-safety record and a seven-year figure reflects the period a department would plausibly need to answer a question about a decision -- it is a placeholder, not a legal opinion. Assessment detail is the largest and least useful long-term, so it goes first.",
+    "_what_we_have_not_built": "None of these periods is enforced by code. There is no scheduler, no purge job and no expiry check anywhere in this repository, and a retention policy that nothing enforces is a document rather than a control. Saying so here is more useful than a config value that implies an automation we do not have."
+  },
+
+  "export": {
+    "drop_fields": ["scenario_label", "expected_behaviour", "demonstrates"],
+    "_drop_note": "Prototype-only fields that would not exist in production. They are dropped from any export so that an export of real data and an export of our synthetic data have the same shape.",
+    "coarsen_age_above": 89,
+    "_coarsen_note": "Ages above 89 are reported as '90+'. A single 97-year-old in a district hospital on a given afternoon is identifiable by age alone, and this is the oldest and cheapest disclosure control there is. It is also nowhere near sufficient on its own -- see the re-identification note above."
+  },
+
+  "lawful_basis": {
+    "status": "NOT ESTABLISHED",
+    "_status_note": "Deliberately not a plausible-sounding placeholder. A prototype on synthetic data has no lawful basis question to answer, and writing 'legitimate interests' or 'vital interests' here would create the appearance of a completed assessment that nobody has done. For a real deployment this is a DPIA, a controller/processor determination, and a decision about whether triage support is direct care or secondary use -- and those are decisions for a hospital's DPO, not for us.",
+    "questions_a_deployment_must_answer": [
+      "Who is the controller: the hospital, or whoever operates the model?",
+      "Is automated triage support direct care, or a secondary use requiring separate basis?",
+      "Does any output constitute a decision with legal or similarly significant effect?",
+      "What is the retention period agreed with the clinical governance lead?",
+      "How is a subject access request served against a hash-chained log?",
+      "Where is the digest anchored, given the log is tamper-evident and not tamper-proof?"
+    ]
+  }
+}
