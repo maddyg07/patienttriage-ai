@@ -1,0 +1,78 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION RULES -- NOT CLINICAL PROTOCOLS. These are simplified reasoning patterns written for a prototype. They have not been reviewed by a clinician, they are not derived from any published guideline, and they must not be used for any real clinical decision.",
+
+  "_what_a_safety_rule_is": "A hard clinical pattern that sets a FLOOR on the triage band, independently of the score. Rules can only ever raise a band. There is no rule anywhere in this file, and no mechanism in core/safety_rules.py, capable of lowering one. Only a nurse can do that, from Phase 8 onward, with a logged reason.",
+
+  "_why_they_exist": "A weighted score is a good instrument for ranking and a bad instrument for absolutes. Domain caps stop correlated findings from double-counting, which is correct, and the same caps stop a genuine emergency from reaching CODE on points alone -- exactly what happens to P011. The answer is not to inflate weights until the arithmetic happens to work; a weight tuned to force one patient over a line distorts every other patient. The answer is that some patterns are not a matter of degree, and those are written here as named rules with their own evidence trail.",
+
+  "_on_restraint": "Every rule added here is a rule that fires on patients we have not thought about. A guard that fires on most of the board has replaced the engine with a lookup table and thrown away the ranking that makes a queue useful. The suite below is deliberately small, each entry is a pattern where being wrong is severe and time matters, and scripts/run_triage.py --rules reports how many firings were actually BINDING so over-firing is visible rather than hidden.",
+
+  "rules": [
+    {
+      "rule_id": "R1_acute_neuro_cluster",
+      "name": "Acute facial change with speech and one-sided weakness",
+      "floor": "L4_CODE",
+      "rationale": "Three time-critical findings appearing together on a documented baseline. The neurological domain cap correctly prevents these correlated signals from stacking, and that cap is precisely why the score cannot reach CODE on its own. This pattern is not a matter of degree.",
+      "enabled": true
+    },
+    {
+      "rule_id": "R2_altered_consciousness",
+      "name": "Responds only to pain, or unresponsive",
+      "floor": "L4_CODE",
+      "rationale": "A patient who cannot be roused by voice requires immediate assessment regardless of every other number on the page.",
+      "enabled": true
+    },
+    {
+      "rule_id": "R3_critical_hypoxia",
+      "name": "SpO2 below the age-band critical threshold",
+      "floor": "L4_CODE",
+      "rationale": "A single measurement that is sufficient on its own. Read from the same age-aware table the scorer uses, so a value critical for an infant and a value critical for an adult are both handled correctly.",
+      "enabled": true
+    },
+    {
+      "rule_id": "R4_shock_pattern",
+      "name": "Critically low blood pressure, or hypotension with tachycardia",
+      "floor": "L4_CODE",
+      "rationale": "Circulatory failure can present with each individual number only moderately deviant. The combination matters more than either part, and the combination is what the domain cap flattens.",
+      "enabled": true
+    },
+    {
+      "rule_id": "R5_infant_serious_signs",
+      "name": "Infant with reduced feeding or responsiveness plus any deviation",
+      "floor": "L3_PULL",
+      "rationale": "Infants compensate well and then decompensate abruptly. Reassuring individual vitals are weak evidence in a baby who is not feeding and not responding normally.",
+      "enabled": true
+    },
+    {
+      "rule_id": "R6_anticoagulated_head_injury",
+      "name": "Anticoagulated patient who has struck their head",
+      "floor": "L3_PULL",
+      "rationale": "Delayed intracranial bleeding may produce no abnormal vital sign for hours. This is a rule precisely because there is nothing for a scorer to measure yet.",
+      "enabled": true
+    },
+    {
+      "rule_id": "R7_unresolved_finding_low_confidence",
+      "name": "Concerning finding we cannot resolve, on thin information",
+      "floor": "L2_LOOK",
+      "rationale": "The rule that stops 'we do not know' from resolving into 'nothing to see'. It requires BOTH an unresolved concerning finding AND confidence below the threshold, so it does not fire on patients who are simply poorly documented and otherwise unremarkable. The floor is L2, not L3, on purpose -- see the note below.",
+      "enabled": true
+    },
+    {
+      "rule_id": "R8_denial_contradicted",
+      "name": "Denial directly contradicted by objective findings",
+      "floor": "L3_PULL",
+      "rationale": "A patient under-reporting while the measurements disagree is a recognised under-triage pattern. The rule exists so the floor does not depend on the conflict happening to score enough points.",
+      "enabled": true
+    }
+  ],
+
+  "_r7_floor_note": "R7 floors at L2 LOOK rather than L3 PULL after an argument worth recording. L3 would mean every patient with an unreadable face and no records gets a nurse within minutes -- which sounds safe and lands hardest on people without regular care, without documentation and without a relative to speak for them. That is the same failure Phase 6 refused. L2 says: get eyes on this person soon, and go and ask the one question that would settle it. Raising this to L3_PULL is a one-word change here, and a department that wanted it should make that choice explicitly rather than inherit ours.",
+
+  "thresholds": {
+    "low_confidence": 0.75,
+    "hypotension_with_tachycardia": {
+      "systolic_bp_below": 100,
+      "heart_rate_above": 110
+    }
+  }
+}

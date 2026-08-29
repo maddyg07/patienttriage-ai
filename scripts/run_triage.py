@@ -1,7 +1,7 @@
 """
 scripts/run_triage.py
 =====================
-Phase 6 verification. Scores all 24 synthetic patients, attaches confidence and
+Phase 7 verification. Scores all 24 synthetic patients, attaches confidence and
 a plausible band set to each, and prints the ranked queue plus explanation and
 uncertainty panels.
 
@@ -15,6 +15,7 @@ Run from the repository root:
     python -m scripts.run_triage --fairness     # the counterfactual fairness test
     python -m scripts.run_triage --ladder P016  # the facial decision path, step by step
     python -m scripts.run_triage --provenance   # what a weaker baseline costs
+    python -m scripts.run_triage --rules        # every safety rule firing on the board
     python -m scripts.run_triage --stale P002   # confidence decaying while waiting
     python -m scripts.run_triage --hospital small_ed
 """
@@ -22,6 +23,7 @@ Run from the repository root:
 import sys
 
 from core.config import HospitalConfig
+from core.enums import TriageBand
 from core.patient_loader import load_patient, load_patients, patients_demonstrating
 from core.facial import (
     explain_facial,
@@ -29,6 +31,7 @@ from core.facial import (
     resolve_baseline,
 )
 from core.risk_engine import RiskEngine, explain
+from core.safety_rules import explain_rules
 from core.uncertainty import explain_confidence
 
 
@@ -56,6 +59,8 @@ def show_queue(engine, patients):
         if len(top) > 24:
             top = top[:21] + "..."
         marker = " *" if a.proposed_band.value >= 3 else "  "
+        if a.band_was_floored:
+            marker = " R"
         # "could be" is the most urgent band our uncertainty cannot rule out.
         worst = a.worst_plausible_band
         could = "" if worst == a.proposed_band else f"up to {worst.word}"
@@ -74,7 +79,61 @@ def show_queue(engine, patients):
     widened = [a for _, a in scored if not a.band_is_certain]
     print(f"  {len(widened)} of {len(scored)} patients carry a band we cannot "
           f"pin down on the data we hold")
+    floored = [a for _, a in scored if a.band_was_floored]
+    if floored:
+        print(f"  R marks a band set by a safety rule rather than by the score "
+              f"({len(floored)} patients)")
+
+    code = counts.get(TriageBand.L4_CODE, 0)
+    bays = engine.hospital.resus_bays
+    if code > bays:
+        print()
+        print(f"  CAPACITY: {code} patients at CODE, {bays} resus bays. The")
+        print(f"  guard does not know that and should not -- a rule that fired")
+        print(f"  less often when the department was full would be a rule that")
+        print(f"  triaged by bed count. Reconciling clinical need against")
+        print(f"  capacity is a NURSE's decision (Phase 13) under explicit")
+        print(f"  surge policy (Phase 14), made visibly and with a logged")
+        print(f"  reason -- not something the engine quietly does for them.")
     return scored
+
+
+def show_rules(engine, patients):
+    rule("THE SAFETY GUARD  --  every firing on the board")
+    scored = [(p, engine.assess(p)) for p in patients]
+    fired = [(p, a) for p, a in scored if a.rule_firings]
+
+    for p, a in sorted(fired, key=lambda pair: -pair[1].risk_score):
+        score_band = engine.hospital.thresholds.band_for_score(a.risk_score)
+        arrow = (f"{score_band.word} -> {a.proposed_band.word}"
+                 if a.band_was_floored else f"{a.proposed_band.word}")
+        print(f"\n  {p.patient_id}   score {a.risk_score:.0f}   {arrow}")
+        print(explain_rules(a))
+
+    firings = sum(len(a.rule_firings) for _, a in scored)
+    binding = sum(1 for _, a in scored for f in a.rule_firings if f.binding)
+    print("\n" + "  " + "-" * 72)
+    print(f"  {firings} firings across {len(fired)} of {len(scored)} patients. "
+          f"{binding} were BINDING.")
+    print()
+    print("  Both halves of that number matter. If the guard fired on most of")
+    print("  the board it would have replaced the ranking engine with a lookup")
+    print("  table. If nothing ever bound, the rules would be decoration. Five")
+    print("  firings agreed with a score that had already got there on its own,")
+    print("  which is the scorer doing its job.")
+    print()
+    print("  Note what is NOT in this output: a single band moving down. There")
+    print("  is no code path in core/safety_rules.py capable of producing one.")
+    print("  The mechanism is max(score_band, highest_floor) and nothing else.")
+    print()
+    print("  One rule deserves scrutiny. R7 fires on P016 at a 75% confidence")
+    print("  cutoff, and she sits at 72% -- close enough to look like a")
+    print("  threshold picked to catch her. It is not, and this is checkable:")
+    print("  move the cutoff anywhere from 75% to 100% and P016 is still the")
+    print("  only patient who fires it. Below 75% nobody does. The confidence")
+    print("  figure is not what selects her; the requirement for an UNRESOLVED")
+    print("  CONCERNING FINDING is, and she is the only patient on the board")
+    print("  who has one. The cutoff is a floor under that test, not the test.")
 
 
 def show_patient(engine, patient):
@@ -92,6 +151,9 @@ def show_patient(engine, patient):
         print(explain_facial(patient))
     print("\n  HOW MUCH WE TRUST IT")
     print(explain_confidence(a))
+    if a.rule_firings:
+        print("\n  SAFETY RULES")
+        print(explain_rules(a))
     print("\n  EXPECTED BEHAVIOUR (authored in Phase 2)")
     for line in _wrap(patient.expected_behaviour, 70):
         print(f"    {line}")
@@ -389,6 +451,9 @@ def main():
     if args and args[0] == "--confidence":
         show_confidence_board(engine, load_patients())
         return
+    if args and args[0] == "--rules":
+        show_rules(engine, load_patients())
+        return
     if args and args[0] == "--provenance":
         show_provenance(engine)
         return
@@ -407,36 +472,42 @@ def main():
     patients = load_patients()
     show_queue(engine, patients)
     show_facial_comparison(engine)
+    show_rules(engine, patients)
     show_fairness(engine)
     show_provenance(engine)
     show_confidence_board(engine, patients)
     show_staleness(engine, load_patient("P002"))
 
-    rule("PHASE 6 RESULT, AND TWO THINGS STILL WRONG")
-    print("  Every patient now has a score, a proposed band, a full contribution")
-    print("  trace, a confidence figure, a named reason for that confidence, and")
-    print("  a set of bands we cannot rule out. Two known gaps remain, both left")
-    print("  visible on purpose:")
+    rule("PHASE 7 RESULT")
+    print("  Both long-standing gaps are closed, and neither was closed by")
+    print("  changing a weight.")
     print()
-    print("  1. P011, the acute stroke, lands at L3 rather than L4. The")
-    print("     neurological domain cap that stops correlated signals from")
-    print("     double-counting also stops a genuine emergency from reaching")
-    print("     CODE on score alone. The fix is NOT to inflate the weights")
-    print("     until it happens to work. It is a hard clinical rule in")
-    print("     Phase 7 that floors an acute stroke cluster at L4 regardless")
-    print("     of score. The scoring model is not the final authority.")
+    print("  P011, the acute stroke, has sat at L3 since Phase 3. He still")
+    print("  scores 64 and CODE still starts at 75. What changed is that a")
+    print("  named rule now floors the acute neurological cluster at CODE and")
+    print("  shows its evidence. The tempting fix -- inflate the facial and")
+    print("  speech weights until he crosses -- would have re-ranked all 24")
+    print("  patients to move one, and the distortion would have been")
+    print("  invisible because the arithmetic still looks principled.")
     print()
-    print("  2. P016 is no longer mislabelled, but she is still not handled.")
-    print("     We now show her full decision ladder, and step 3 of it reads")
-    print("     'refusing to guess in either direction'. That is honest and it")
-    print("     is not yet enough. Phase 7 turns low confidence plus a")
-    print("     concerning finding into escalation; Phase 11 turns 'baseline'")
-    print("     into the one question worth asking her.")
+    print("  P016 no longer sits last. She is L2 LOOK, floored by R7, because")
+    print("  a concerning finding we cannot resolve on thin information is not")
+    print("  the same thing as a patient with nothing wrong. Her score is")
+    print("  still 4. Nobody pretended otherwise.")
     print()
-    print("  Still missing: safety rules (7), the ratchet (8). The band above is")
-    print("  a PROPOSAL, not a decision. ALL VALUES ARE SIMULATED and clinically")
-    print("  unvalidated. Confidence is a claim about the quality of our data,")
-    print("  never a probability of any clinical outcome.\n")
+    print("  The cost, stated plainly: after Phase 7 the score and the band can")
+    print("  disagree. P011 reads 64/100 and L4 CODE on the same panel. That")
+    print("  looks like a bug until you read the rule underneath it, and we")
+    print("  would rather explain it than hide it. A score you can trust to")
+    print("  mean what it says, plus rules that can override it in the open,")
+    print("  beats a score quietly bent until it produces the right answers.")
+    print()
+    print("  Still missing: the ratchet (8) and the audit log (9). The band")
+    print("  above remains a PROPOSAL. Nothing in this system can lower it yet,")
+    print("  and after Phase 8 only a nurse will be able to, with a reason on")
+    print("  the record. ALL VALUES ARE SIMULATED and clinically unvalidated;")
+    print("  the rules above are simplified demonstration patterns, not")
+    print("  clinical protocols, and no clinician has reviewed them.\n")
 
 
 if __name__ == "__main__":

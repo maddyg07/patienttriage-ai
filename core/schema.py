@@ -20,7 +20,10 @@ clinically validated.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
+
+if TYPE_CHECKING:                      # avoids a cycle: safety_rules imports us
+    from core.safety_rules import RuleFiring
 
 from core.enums import (
     AgeBand,
@@ -422,7 +425,8 @@ class Assessment:
     Populated progressively across phases:
         Phase 3  -> risk_score, contributions, proposed_band
         Phase 5  -> confidence, plausible_bands, missing_fields
-        Phase 6/7-> safety_rules_fired
+        Phase 6  -> the facial verdict feeding contributions
+        Phase 7  -> rule_firings, band_floor, floor_reason
         Phase 8  -> final_band, changed_by, escalated
     """
 
@@ -438,6 +442,11 @@ class Assessment:
     data_completeness: float = 1.0
     missing_fields: List[str] = field(default_factory=list)
     quality: Optional[DataQuality] = None                # Phase 5 detail
+
+    @property
+    def band_was_floored(self) -> bool:
+        """True when a hard rule, not the score, decided this band."""
+        return bool(self.floor_reason)
 
     @property
     def band_is_certain(self) -> bool:
@@ -456,7 +465,11 @@ class Assessment:
         """
         return max(self.plausible_bands) if self.plausible_bands else self.proposed_band
 
-    safety_rules_fired: List[str] = field(default_factory=list)
+    cap_notes: List[str] = field(default_factory=list)          # domain caps
+    safety_rules_fired: List[str] = field(default_factory=list)  # Phase 7
+    rule_firings: List["RuleFiring"] = field(default_factory=list)
+    band_floor: Optional[TriageBand] = None
+    floor_reason: str = ""
 
     proposed_band: Optional[TriageBand] = None           # before the ratchet
     final_band: Optional[TriageBand] = None              # after the ratchet

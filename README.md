@@ -55,7 +55,7 @@ it never lowers risk.
 
 ## Status
 
-Built in phases. Currently at **Phase 6 — the facial signal module**.
+Built in phases. Currently at **Phase 7 — the safety guard**.
 
 | Phase | | Status |
 |---|---|---|
@@ -65,8 +65,8 @@ Built in phases. Currently at **Phase 6 — the facial signal module**.
 | 4 | Age-aware layer | done |
 | 5 | Data quality & uncertainty | done |
 | 6 | Facial signal module | done |
-| 7 | Safety guard | next |
-| 8 | Ratchet engine | |
+| 7 | Safety guard | done |
+| 8 | Ratchet engine | next |
 | 9 | Audit log | |
 | 10 | Simulation clock & re-triage | |
 | 11 | VOI adaptive questions | |
@@ -110,6 +110,7 @@ python -m scripts.run_triage --confidence    # who we understand least
 python -m scripts.run_triage --fairness      # the counterfactual fairness test
 python -m scripts.run_triage --ladder P016   # the facial decision path, step by step
 python -m scripts.run_triage --provenance    # what a weaker baseline costs
+python -m scripts.run_triage --rules         # every safety rule firing on the board
 python -m scripts.run_triage --stale P002    # confidence decaying while a patient waits
 python -m scripts.run_triage --hospital small_ed
 ```
@@ -209,6 +210,55 @@ at a time and her score stays at 66 while confidence falls from 94% to 74%.
 The correct response to a missing baseline is to say so loudly and go and find
 out (Phase 11), not to convert our ignorance into the patient's points.
 
+## The safety guard
+
+A weighted score is a good instrument for ranking and a bad one for absolutes.
+`core/safety_rules.py` holds eight named clinical patterns, each of which sets a
+**floor** on the band independently of the score.
+
+**Rules can only raise a band.** This is not a convention the rules agree to
+follow — there is no code path in the file capable of lowering one. The whole
+mechanism is `max(score_band, highest_floor)`. A rule that wanted to say "this
+patient is less sick than the score suggests" has no way to express it, which is
+the correct expressive limit for an automated system. De-escalation belongs to a
+nurse with a logged reason (Phase 8).
+
+### Why rules instead of better weights
+
+P011 has an acute facial change, slurred speech and one-sided weakness on a
+documented symmetric baseline. He scores 64. CODE starts at 75.
+
+The tempting fix is to raise the facial and speech weights until he crosses.
+That fix is wrong, and precisely why is worth stating: those weights are shared
+by all 24 patients. Tuning them to force one patient over one line silently
+re-ranks the entire board to fix a single case, and the distortion is invisible
+because the arithmetic still looks principled. It is overfitting with extra
+steps.
+
+So the weights did not move. The score is still 64, and a named rule floors the
+pattern at CODE with its own evidence trail.
+
+**The cost, stated plainly:** after Phase 7 the score and the band can disagree.
+P011's panel reads `64/100` and `L4 CODE` together. That looks like a bug until
+you read the rule underneath it, and we would rather explain it than hide it.
+
+### Restraint is part of the design
+
+Every rule added fires on patients nobody has thought about. `--rules` reports
+**8 firings across 8 of 24 patients, 3 of them binding** — five agreed with a
+score that had already got there on its own. If the guard fired on most of the
+board it would have replaced the ranking engine with a lookup table; if nothing
+ever bound, the rules would be decoration. Both failure modes are visible in
+that one line.
+
+### Capacity is not the guard's business
+
+The board now shows 5 patients at CODE against 3 resus bays. The guard does not
+know that, and should not. A rule that fired less often when the department was
+full would be a rule that triages by bed count. Reconciling clinical need
+against capacity is a nurse's decision (Phase 13) under explicit surge policy
+(Phase 14), made visibly and with a logged reason.
+
 ## Layout
 
 ```
@@ -226,22 +276,25 @@ reasoned about and eventually served over an API without touching the UI.
 Every tunable number lives in `data/` behind a visible disclaimer — band
 cutoffs in `data/hospitals/`, point values in `data/risk_weights.json`,
 vital-sign ranges in `data/clinical_thresholds.json`, confidence weights in
-`data/uncertainty_config.json`, and baseline reliability in
-`data/facial_config.json`. Nothing a judge might question is hard-coded in
+`data/uncertainty_config.json`, baseline reliability in
+`data/facial_config.json`, and the hard rules in `data/safety_rules.json`. Nothing a judge might question is hard-coded in
 the engine.
 
-## Known gaps, left visible on purpose
+## Both long-standing gaps, now closed
 
-- **P011**, an acute stroke, scores L3 rather than L4. The domain cap that
-  prevents double-counting also prevents a real emergency from reaching CODE on
-  score alone. The fix is not to inflate weights until it happens to work; it is
-  a hard clinical rule in Phase 7 that floors a stroke cluster at L4 regardless
-  of score. The scoring model is not meant to be the final authority.
-- **P016**, facial asymmetry with no baseline anywhere, is now labelled honestly
-  — 18% baseline knowledge, plausible bands WATCH/LOOK, and a decision path
-  whose third step reads *refusing to guess in either direction*. Nothing yet
-  *acts* on it. Phase 7 turns low confidence plus a concerning finding into
-  escalation.
+- **P011** is at L4 CODE, floored by `R1_acute_neuro_cluster`. His score is
+  unchanged at 64 and no weight was touched.
+- **P016** is at L2 LOOK, floored by `R7_unresolved_finding_low_confidence`,
+  because a concerning finding we cannot resolve on thin information is not the
+  same thing as a patient with nothing wrong. Her score is still 4 and nobody
+  pretended otherwise.
+
+R7 fires at a 75% confidence cutoff while P016 sits at 72%, which looks like a
+threshold picked to catch her. It is not, and that is checkable: move the cutoff
+anywhere from 75% to 100% and she is still the only patient who fires it, and
+below 75% nobody does. Confidence is not what selects her — the requirement for
+an *unresolved concerning finding* is, and she is the only patient on the board
+who has one.
 
 ## What this prototype does not claim
 
@@ -252,5 +305,6 @@ more. The confidence percentage is a claim about the quality of our input data
 and is not a probability of any clinical outcome. The facial module does not
 diagnose anything: it reports that findings appeared together and that a
 baseline did or did not explain them, and it never uses a diagnosis as a
-finding. `docs/limitations.md` sets
+finding. The safety rules are simplified demonstration patterns, not clinical
+protocols, and no clinician has reviewed them. `docs/limitations.md` sets
 out what real validation would require.

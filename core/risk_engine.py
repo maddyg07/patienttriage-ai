@@ -40,10 +40,11 @@ WHAT THIS FILE DELIBERATELY DOES NOT DO
     core/uncertainty.py and is forbidden from touching the score.)
   * (Phase 6 moved the facial reasoning into core/facial.py, which owns the
     baseline comparison, the decision path and the fairness counterfactual.)
-  * No hard clinical safety rules -- Phase 7. This matters: the scorer is not
-    meant to catch everything. Some patterns, such as an acute stroke cluster,
-    should be floored at L4 by a RULE regardless of score, precisely because a
-    scoring model must never be the final authority.
+  * (Phase 7 added the hard clinical rules in core/safety_rules.py. This is
+    the one that matters most: the scorer was never meant to catch everything.
+    Some patterns are floored by a RULE regardless of score, precisely because
+    a scoring model must never be the final authority. After Phase 7 the score
+    and the band can legitimately disagree, and P011 is the case where they do.)
   * No ratchet -- Phase 8.
 
 The band produced here is therefore `proposed_band`, never `final_band`.
@@ -63,6 +64,7 @@ from core.age_rules import context_rules, thresholds_for
 from core.config import HospitalConfig
 from core.enums import AgeBand, Consciousness
 from core.facial import score_facial
+from core.safety_rules import SafetyGuard
 from core.schema import VITAL_FIELDS, Assessment, Contribution, Patient
 from core.uncertainty import UncertaintyEngine
 
@@ -94,6 +96,7 @@ class RiskEngine:
         thresholds: Optional[dict] = None,
         weights: Optional[dict] = None,
         uncertainty: Optional[UncertaintyEngine] = None,
+        guard: Optional[SafetyGuard] = None,
     ):
         self.hospital = hospital
         self.thresholds = thresholds or _load(THRESHOLDS_FILE)
@@ -102,6 +105,9 @@ class RiskEngine:
         # Phase 5. A separate stage, held here only so callers get the whole
         # pipeline from one object. It can read the score; it cannot write it.
         self.uncertainty = uncertainty or UncertaintyEngine()
+        # Phase 7. Runs last, because R7 needs the confidence figure. It can
+        # raise a band and has no mechanism capable of lowering one.
+        self.guard = guard or SafetyGuard()
 
     # -----------------------------------------------------------------------
     # Public entry point
@@ -133,16 +139,19 @@ class RiskEngine:
             missing_fields=patient.vitals.missing_fields(),
         )
         assessment.proposed_band = self.hospital.thresholds.band_for_score(score)
-        assessment.safety_rules_fired.extend(cap_notes)
+        assessment.cap_notes.extend(cap_notes)
 
         if total > MAX_SCORE:
-            assessment.safety_rules_fired.append(
+            assessment.cap_notes.append(
                 f"score_saturated (total {total:.0f} clamped to {MAX_SCORE:.0f})")
 
         # Phase 5. Runs AFTER the score is final and asserts it did not change
         # it. Confidence widens the plausible band set; it never edits the
         # score, and it never lowers a band.
         self.uncertainty.apply(patient, assessment, self.hospital, now)
+
+        # Phase 7. The scoring model stops being the final authority here.
+        self.guard.apply(patient, assessment, self.thresholds)
         return assessment
 
     # -----------------------------------------------------------------------
@@ -422,6 +431,15 @@ def explain(assessment: Assessment) -> str:
             lines.append(f"      {c.label}")
 
     lines.append("    " + "-" * 58)
-    lines.append(f"    {'TOTAL':<10}{assessment.risk_score:>5.0f}/100"
-                 f"   ->  {assessment.proposed_band}")
+    lines.append("    " + "-" * 58)
+    if assessment.band_was_floored:
+        score_band = "".join(
+            str(b) for b in [assessment.proposed_band])  # display only
+        lines.append(f"    {'TOTAL':<10}{assessment.risk_score:>5.0f}/100"
+                     f"   ->  {assessment.proposed_band}   "
+                     f"(band set by rule, not by score)")
+        lines.append(f"    {'':<10}{assessment.floor_reason}")
+    else:
+        lines.append(f"    {'TOTAL':<10}{assessment.risk_score:>5.0f}/100"
+                     f"   ->  {assessment.proposed_band}")
     return "\n".join(lines)
