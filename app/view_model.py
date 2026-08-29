@@ -76,6 +76,7 @@ class PatientCard:
     overdue_minutes: int
     next_question: Optional[object] = None      # QuestionValue, or None
     acuity_history: List[object] = field(default_factory=list)
+    seen: Optional[object] = None               # SeenRecord, or None
 
     @property
     def patient_id(self) -> str:
@@ -86,8 +87,20 @@ class PatientCard:
         return self.assessment.band
 
     @property
+    def is_seen(self) -> bool:
+        return self.seen is not None
+
+    @property
     def is_overdue(self) -> bool:
-        return self.overdue_minutes > 0
+        """
+        Past the care target and nobody has been yet.
+
+        A patient who has been seen leaves this list, because the target
+        measures time to first clinical contact and that has happened. They do
+        NOT leave the queue or the reassessment schedule -- being seen once is
+        not the same as being safe, and the clock keeps looking at them.
+        """
+        return self.overdue_minutes > 0 and not self.is_seen
 
     @property
     def uncertain(self) -> bool:
@@ -148,9 +161,21 @@ class BoardView:
     # -- the third list ------------------------------------------------------
 
     def overdue(self) -> List[PatientCard]:
-        """Who has been waiting longer than their band promised."""
+        """Who has been waiting longer than their band promised, unseen."""
         return sorted([c for c in self.cards if c.is_overdue],
                       key=lambda c: (-int(c.band), -c.overdue_minutes))
+
+    def seen(self) -> List[PatientCard]:
+        """
+        Patients a clinician has made contact with.
+
+        They stay on the board and stay on the reassessment schedule. The only
+        thing being seen changes is that they stop counting as an unmet need,
+        because the target they were breaching measures time to first contact
+        and it has now happened.
+        """
+        return sorted([c for c in self.cards if c.is_seen],
+                      key=lambda c: c.seen.at_minute)
 
     # -- the question queue --------------------------------------------------
 
@@ -219,7 +244,7 @@ class BoardView:
 # ---------------------------------------------------------------------------
 
 def build_board(engine, patients: List[Patient], at_minute: int,
-                ratchet=None, question_engine=None,
+                ratchet=None, question_engine=None, workflow=None,
                 question_cap: int = 3) -> BoardView:
     """
     Run the pipeline over a roster and arrange the results for display.
@@ -251,6 +276,8 @@ def build_board(engine, patients: List[Patient], at_minute: int,
         if question_engine is not None:
             card.next_question = question_engine.next_question(
                 patient, assessment, now_minute=at_minute)
+        if workflow is not None:
+            card.seen = workflow.seen_record(patient.patient_id)
         cards.append(card)
 
     return BoardView(hospital=hospital, at_minute=at_minute, cards=cards,
@@ -258,7 +285,7 @@ def build_board(engine, patients: List[Patient], at_minute: int,
 
 
 def build_board_from_clock(clock, timeline, question_engine=None,
-                           at_minute: Optional[int] = None,
+                           workflow=None, at_minute: Optional[int] = None,
                            question_cap: int = 3) -> BoardView:
     """
     Build the board from a shift that has already been simulated.
@@ -300,6 +327,8 @@ def build_board_from_clock(clock, timeline, question_engine=None,
         if question_engine is not None:
             card.next_question = question_engine.next_question(
                 patient, assessment, now_minute=now)
+        if workflow is not None:
+            card.seen = workflow.seen_record(pid)
         cards.append(card)
 
     return BoardView(hospital=hospital, at_minute=now, cards=cards,

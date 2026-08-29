@@ -1,7 +1,7 @@
 """
 scripts/run_triage.py
 =====================
-Phase 12 verification. Scores all 24 synthetic patients, attaches confidence and
+Phase 13 verification. Scores all 24 synthetic patients, attaches confidence and
 a plausible band set to each, prints the ranked queue plus explanation and
 uncertainty panels, runs the whole roster through a simulated shift, and prices
 the next question worth asking each of them.
@@ -26,6 +26,7 @@ Run from the repository root:
     python -m scripts.run_triage --questions    # the next question, for everyone
     python -m scripts.run_triage --ask P019     # what turns on one answer
     python -m scripts.run_triage --board        # the department board
+    python -m scripts.run_triage --workflow     # a nurse working the board
     python -m scripts.run_triage --stale P002   # confidence decaying while waiting
     python -m scripts.run_triage --hospital small_ed
 """
@@ -775,6 +776,168 @@ def show_board(engine):
     print("  python -m scripts.build_dashboard   writes the full board to HTML")
 
 
+def show_workflow(engine):
+    from pathlib import Path
+
+    from app.view_model import build_board_from_clock
+    from core.audit import AuditLog, render_entry
+    from core.questions import QuestionEngine
+    from core.ratchet import Ratchet
+    from core.workflow import ActionRejected, Workflow, explain_actions
+
+    rule("THE NURSE WORKFLOW  --  the board becomes something to act on")
+    path = Path("/tmp/patienttriage_demo_workflow.jsonl")
+    path.unlink(missing_ok=True)
+    log = AuditLog(path=path)
+
+    clock = SimulationClock(engine, load_patients(), ratchet=Ratchet(audit=log))
+    timeline = clock.run()
+    questions = QuestionEngine(engine)
+    workflow = Workflow(engine, ratchet=clock.ratchet, audit=log)
+    board = build_board_from_clock(clock, timeline, questions, workflow=workflow)
+    now = board.at_minute
+
+    print(f"  End of a simulated shift. {len(board.overdue())} patients are past")
+    print("  their time-to-clinician target and nobody has been to see them.")
+    print("  RN-2210 starts working the board.\n")
+
+    print("  1. THE SYSTEM CANNOT DO THIS ITSELF")
+    worst = board.overdue()[0]
+    try:
+        workflow.mark_seen(worst.patient, worst.assessment, "", now)
+        print("     ACCEPTED  <- this should not happen")
+    except ActionRejected as exc:
+        print(f"     rejected  {exc}")
+    print()
+    print("     There is no automated path to marking a patient seen. Not a")
+    print("     disabled one, not a batch operation -- grep for PATIENT_SEEN")
+    print("     and it is written in exactly one place, by a person, under")
+    print("     their own identifier. That restriction is the phase.")
+    print()
+    print("     'Waiting past target' is the panel that says the department is")
+    print("     not keeping up. A system able to clear its own overdue list")
+    print("     could make that panel look healthy without anybody being")
+    print("     treated, and an engine that can improve its own reported")
+    print("     metrics will eventually be tuned to do so. Same reasoning as")
+    print("     the ratchet, pointed at a different failure: there the machine")
+    print("     must not lower acuity, here it must not close a need.")
+
+    print("\n  2. SEEING THREE PATIENTS")
+    for card in board.overdue()[:3]:
+        result = workflow.mark_seen(card.patient, card.assessment, "RN-2210", now)
+        print(f"     {card.patient_id}  {result.detail}")
+
+    print("\n  3. ANSWERING A QUESTION")
+    target = board.questions()[0]
+    value = target.next_question
+    print(f"     {target.patient_id} is at {target.band.word}. The board asks:")
+    for line in _wrap(value.question.text, 62):
+        print(f"       {line}")
+    escalating = value.escalating_answers
+    answer = (escalating[0].answer.label if escalating
+              else value.outcomes[0].answer.label)
+    result = workflow.answer_question(
+        target.patient, value, answer, "RN-2210", now + 1)
+    print(f'     answered "{answer}"')
+    print(f"     -> risk {result.assessment.risk_score:.0f}, "
+          f"{result.previous_band.word} -> {result.band.word}"
+          f"{'   ESCALATED' if result.escalated else ''}")
+    print()
+    print("     The question engine already predicted this in Phase 11, and")
+    print("     the workflow does not trust that prediction -- it applies the")
+    print("     real answer and runs the whole pipeline again. Reusing the")
+    print("     earlier figure would let the board show a band that no")
+    print("     assessment ever produced.")
+
+    after_first = build_board_from_clock(clock, timeline, questions,
+                                         workflow=workflow)
+
+    print("\n  4. THE ANSWER THAT CANNOT LOWER A BAND")
+    p016 = next((c for c in after_first.cards if c.patient_id == "P016"), None)
+    if p016 is not None and p016.next_question is not None:
+        v16 = p016.next_question
+        resolving = next((o.answer.label for o in v16.outcomes
+                          if not o.answer.is_non_answer), None)
+        r16 = workflow.answer_question(
+            p016.patient, v16, resolving, "RN-2210", now + 2)
+        print(f"     P016 is at {p016.band.word}, floored by a safety rule because")
+        print("     we could not resolve a concerning finding. RN-2210 asks and")
+        print(f'     gets an answer: "{resolving}".')
+        print()
+        print(f"     engine proposes : {r16.assessment.proposed_band.word}")
+        print(f"     FINAL           : {r16.band.word}"
+              f"{'   (ratchet held)' if r16.assessment.band_was_held else ''}")
+        print()
+        print("     The answer resolved the finding and the engine wanted to")
+        print("     drop her. It did not get to. An answer produces a fresh")
+        print("     assessment which goes through the ratchet like any other,")
+        print("     so it can raise a band and has no mechanism to lower one --")
+        print("     even when the answer is the good news we went looking for.")
+        print("     What it does instead is give a nurse documented grounds to")
+        print("     de-escalate her deliberately, under their own name, which")
+        print("     is exactly what Phase 11 priced it at.")
+
+    print("\n  5. THE ANSWER NOBODY COULD GET")
+    remaining = [c for c in board.questions()
+                 if c.patient_id not in (target.patient_id, "P016")]
+    if remaining:
+        other = remaining[0]
+        workflow.unable_to_answer(
+            other.patient, other.next_question, "RN-2210", now + 3,
+            note="patient in imaging, will re-ask")
+        print(f"     {other.patient_id}: recorded as asked and unanswered.")
+    print()
+    print("     A real outcome with no effect on the record. It keeps the")
+    print("     uncertainty, keeps the question available, and resolves")
+    print("     nothing. A workflow that only accepted answers would push a")
+    print("     clinician under time pressure toward guessing on the patient's")
+    print("     behalf -- and a guess entered as an answer is worse than a gap,")
+    print("     because a gap is visible.")
+
+    after = build_board_from_clock(clock, timeline, questions, workflow=workflow)
+    print("\n  6. WHAT MOVED")
+    print(f"     overdue : {len(board.overdue())} -> {len(after.overdue())}")
+    print(f"     seen    : 0 -> {len(after.seen())}")
+    print(f"     actions : {workflow.summary()}")
+    print()
+    print("     The three patients seen are still on the board and still on")
+    print("     the reassessment schedule. Being seen once is not being safe,")
+    print("     and treating 'a nurse looked at them' as 'somebody else's")
+    print("     problem now' is the exact failure this project is named after.")
+
+    print("\n  7. THE TRAIL")
+    for entry in log.for_patient(target.patient_id)[-3:]:
+        print(render_entry(entry))
+    print()
+    print("     Read those two entries in order. The nurse's answer comes")
+    print("     FIRST and the band transition follows it, because that is what")
+    print("     actually happened: a person elicited a fact and the engine drew")
+    print("     a conclusion from it. The first version of this logged the")
+    print("     assessment first, and the trail read as though the engine had")
+    print("     decided something and a human agreed afterwards -- the reverse")
+    print("     of the truth, and invisible unless you went looking.")
+
+    ok, _ = log.verify()
+    print(f"\n     chain still verifies: {ok}")
+
+    print("\n  ONE THING WE DO NOT DO")
+    print("  The workflow never says who to see next. The board presents three")
+    print("  lists precisely because a single blended ranking would hide a")
+    print("  clinical trade-off inside weights nobody agreed, and a workflow")
+    print("  layer answering 'who next?' would collapse them straight back into")
+    print("  that number. The nurse chooses. We record what they chose.")
+
+    print("\n  AND ONE THING TO SAY BEFORE A JUDGE DOES")
+    print("  SEEN IS NOT TREATED. This records that a clinician made contact.")
+    print("  It says nothing about whether anything was done or whether the")
+    print("  patient still needs a bed. A department can reach total compliance")
+    print("  with a time-to-clinician target by having somebody walk past every")
+    print("  patient in the waiting room, and target-driven systems reliably")
+    print("  discover exactly that. We record contact because it is the only")
+    print("  thing we can honestly observe from here, and we call it what it")
+    print("  is rather than dressing it up as a quality measure.")
+
+
 def show_rules(engine, patients):
     rule("THE SAFETY GUARD  --  every firing on the board")
     scored = [(p, engine.assess(p)) for p in patients]
@@ -1128,6 +1291,9 @@ def main():
     if args and args[0] == "--confidence":
         show_confidence_board(engine, load_patients())
         return
+    if args and args[0] == "--workflow":
+        show_workflow(engine)
+        return
     if args and args[0] == "--board":
         show_board(engine)
         return
@@ -1191,61 +1357,70 @@ def main():
     show_questions(engine, patients)
     show_ask(engine, load_patient("P016"))
     show_board(engine)
+    show_workflow(engine)
 
-    rule("PHASE 12 RESULT  --  the board a nurse would actually read")
-    print("  Phase 11 handed this phase two problems rather than a rendering")
-    print("  exercise, and both are answered on the board.")
+    rule("PHASE 13 RESULT  --  the loop closes on a person")
+    print("  Phase 12 built a board that reports. Everything on it was")
+    print("  read-only: the overdue list had no way to shrink and the questions")
+    print("  had nowhere to send an answer. core/workflow.py adds the four")
+    print("  things a clinician can do, and nothing else.")
     print()
-    print("  UNMET NEED IS ITS OWN AXIS. P014 reaches PULL and is re-scored")
-    print("  eighteen times with nobody coming to see her. Re-scoring a patient")
-    print("  is not treating them, and a reassessment that keeps returning the")
-    print("  same band is evidence of an unmet need rather than evidence that")
-    print("  things are fine. Time-to-clinician targets now sit in")
-    print("  data/hospitals/ next to staffing, and waiting time is DISPLAYED")
-    print("  and never scored -- core/config.overdue_by() returns minutes and")
-    print("  its only caller is app/view_model.py.")
+    print("      mark_seen           a clinician made contact")
+    print("      answer_question     somebody answered what we were asking")
+    print("      unable_to_answer    somebody tried, and could not")
+    print("      override            a nurse changes the band  (Phase 8)")
     print()
-    print("  THE QUESTION QUEUE IS CAPPED. An adaptive questioner with a screen")
-    print("  in front of a nurse becomes an interrogation script by default: it")
-    print("  always has one more reasonable-looking thing it would like to know,")
-    print("  and the list grows until it is ignored wholesale. Three are shown,")
-    print("  the number withheld is stated, and the cap is only defensible")
-    print("  because the Phase 11 ranking underneath it is.")
+    print("  Four verbs is not a small API by accident. Every additional one is")
+    print("  a new way for the record to disagree with what happened.")
     print()
-    print("  THREE LISTS, NOT ONE NUMBER. Who is sickest, who has waited past")
-    print("  their target, and who we are least sure about are three separate")
-    print("  panels. A single ranking blending them would be making a clinical")
-    print("  trade-off silently, on weights nobody agreed, and would be")
-    print("  impossible to argue with.")
+    print("  THE SAFETY PROPERTY. Nothing in this system can mark a patient as")
+    print("  seen. No automated path, no default, no batch operation, no config")
+    print("  flag -- grep for PATIENT_SEEN and it is written in exactly one")
+    print("  place, by a person, under their own identifier.")
     print()
-    print("  ZERO LOGIC IN THE UI, AND IT IS CHECKABLE. app/view_model.py")
-    print("  assembles objects core/ already produced; app/dashboard.py formats")
-    print("  strings and is handed its explain_* functions rather than importing")
-    print("  them, so it has no route to core/ at all. Nothing is re-assessed to")
-    print("  draw the board: each card carries the last assessment the clock")
-    print("  actually produced. That matters more than it sounds -- scoring the")
-    print("  roster fresh at minute 240 renders P014 as WATCH, because the two")
-    print("  deteriorations she had while waiting are simply not in the")
-    print("  calculation. The snapshot view this project exists to argue against")
-    print("  would have shipped on a dashboard that looked completely correct.")
+    print("  That restriction is the phase. 'Waiting past target' is the panel")
+    print("  that says the department is not keeping up, and a system able to")
+    print("  clear its own overdue list could make that panel look healthy")
+    print("  without anybody being treated. An engine that can improve its own")
+    print("  reported metrics will eventually be tuned to do so, whether or not")
+    print("  anyone sets out to cheat. Same reasoning as the ratchet, pointed")
+    print("  at a different failure: there the machine must not lower acuity,")
+    print("  here it must not close a need.")
     print()
-    print("  requirements.txt still lists no third-party dependencies. The")
-    print("  board is one self-contained HTML file with no CDN, no fonts and no")
-    print("  scripts, which opens offline on any machine -- and can be diffed,")
-    print("  checked and regenerated deterministically, which a running server")
-    print("  cannot. The boundary is app/view_model.py, so a Streamlit front end")
-    print("  would consume exactly the same BoardView if a product wanted one.")
+    print("  AN ANSWER STILL CANNOT LOWER A BAND. P016 is the proof, and it is")
+    print("  the case six phases have been building toward. A nurse asks the")
+    print("  question, gets the answer, the finding resolves and the engine")
+    print("  proposes WATCH -- and the ratchet holds her at LOOK. The good news")
+    print("  we went looking for does not get to move her either. What it does")
+    print("  is hand a nurse documented grounds to de-escalate her deliberately,")
+    print("  under their own name, which is exactly what Phase 11 priced it at.")
     print()
-    print("  Still missing: the nurse workflow (13), which turns the board from")
-    print("  something to read into something to act on -- acknowledging a")
-    print("  patient, recording that they have been seen, and answering the")
-    print("  questions this board is currently only able to ask.")
+    print("  THE LOG READS CAUSALLY. The nurse's answer is written BEFORE the")
+    print("  band transition it caused. The first version of this logged the")
+    print("  assessment first, and the trail read as though the engine had")
+    print("  decided something and a human agreed afterwards -- the reverse of")
+    print("  the truth, and invisible unless you went looking for it.")
     print()
-    print("  ALL VALUES ARE SIMULATED and clinically unvalidated. The")
-    print("  time-to-clinician targets are demonstration values no department")
-    print("  has agreed, and the board reports need rather than allocating")
-    print("  anything: it does not assign staff, reserve beds, or decide who is")
-    print("  seen next.\n")
+    print("  WHAT WE DELIBERATELY DO NOT DO. The workflow never says who to see")
+    print("  next. The board presents three lists precisely because a single")
+    print("  blended ranking would hide a clinical trade-off inside weights")
+    print("  nobody agreed, and a workflow layer answering \'who next?\' would")
+    print("  collapse them straight back into that number. The nurse chooses.")
+    print("  We record what they chose.")
+    print()
+    print("  Still missing: surge mode (14), which is where the assumption")
+    print("  underneath all of this gets stressed -- the clock currently fires")
+    print("  every reassessment exactly when due, and no real department does")
+    print("  that, least of all a full one.")
+    print()
+    print("  ALL VALUES ARE SIMULATED and clinically unvalidated. SEEN IS NOT")
+    print("  TREATED: it records that a clinician made contact and says nothing")
+    print("  about whether anything was done or whether the patient still needs")
+    print("  a bed. A department can reach total compliance with a")
+    print("  time-to-clinician target by having somebody walk past every patient")
+    print("  in the waiting room, and target-driven systems reliably discover")
+    print("  exactly that. We record contact because it is the only thing we can")
+    print("  honestly observe from here, and we call it what it is.\n")
 
 
 if __name__ == "__main__":

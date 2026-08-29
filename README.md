@@ -65,7 +65,11 @@ department's staffing, not of the model.
 has waited past their target, and who we are least sure about as three separate
 lists rather than one blended score. Waiting time is displayed and never scored.
 
-**6. It knows what to ask.** Rather than reporting a gap, the system prices
+**6. Only a person can close a need.** Nothing in the system can mark a patient
+as seen — there is no automated path to it anywhere. The panel that says the
+department is not keeping up cannot be cleared by the thing being measured.
+
+**7. It knows what to ask.** Rather than reporting a gap, the system prices
 every question it could ask by re-running the whole pipeline on each possible
 answer, and ranks them by whether the answer could change the band — not by how
 much they would raise confidence. Asking cannot lower anyone's acuity, and a
@@ -73,7 +77,7 @@ patient who cannot answer is routed to collateral sources rather than skipped.
 
 ## Status
 
-Built in phases. Currently at **Phase 12 — the department board**.
+Built in phases. Currently at **Phase 13 — the nurse workflow**.
 
 | Phase | | Status |
 |---|---|---|
@@ -89,8 +93,8 @@ Built in phases. Currently at **Phase 12 — the department board**.
 | 10 | Simulation clock & re-triage | done |
 | 11 | VOI adaptive questions | done |
 | 12 | Dashboard | done |
-| 13 | Nurse workflow | next |
-| 14 | Surge mode | |
+| 13 | Nurse workflow | done |
+| 14 | Surge mode | next |
 | 15 | Test suite | |
 | 16 | Docs & privacy | |
 | 17 | Demo mode | |
@@ -138,6 +142,7 @@ python -m scripts.run_triage --timeline P014 # one patient through the clock
 python -m scripts.run_triage --questions     # the next question, for everyone
 python -m scripts.run_triage --ask P019      # what turns on a single answer
 python -m scripts.run_triage --board         # the department board, in the terminal
+python -m scripts.run_triage --workflow      # a nurse working the board
 python -m scripts.run_triage --stale P002    # confidence decaying while a patient waits
 python -m scripts.run_triage --hospital small_ed
 ```
@@ -611,6 +616,7 @@ they have not mentioned yet.
 
 ```bash
 python -m scripts.build_dashboard          # writes board.html
+python -m scripts.build_dashboard --worked # after a nurse has worked it
 python -m scripts.run_triage --board       # the same thing, in the terminal
 ```
 
@@ -713,6 +719,112 @@ tables read correctly in monochrome, on a printout, and to a screen reader. A
 board where the difference between CODE and PULL is a hue fails the first
 colour-blind nurse who uses it.
 
+## The nurse workflow
+
+Phase 12 built a board that reports. Everything on it was read-only — the
+overdue list had no way to shrink and the questions had nowhere to send an
+answer. `core/workflow.py` adds the four things a clinician can do, and nothing
+else:
+
+| | |
+|---|---|
+| `mark_seen` | a clinician made contact with this patient |
+| `answer_question` | somebody answered one of the questions we were asking |
+| `unable_to_answer` | somebody tried, and could not get an answer |
+| `override` | a nurse changes the band (Phase 8, unchanged) |
+
+Four verbs is not a small API by accident. Every additional one is a new way for
+the record to disagree with what happened.
+
+### Nothing in this system can mark a patient as seen
+
+No automated path, no default, no batch operation, no config flag. Grep for
+`PATIENT_SEEN`: it is written in exactly one place, by a person, under their own
+identifier.
+
+That restriction is the phase. "Waiting past target" is the panel that says the
+department is not keeping up, and **a system able to clear its own overdue list
+could make that panel look healthy without anybody being treated**. An engine
+that can improve its own reported metrics will eventually be tuned to do so,
+whether or not anyone sets out to cheat.
+
+Same reasoning as the ratchet, pointed at a different failure: there the machine
+must not lower acuity, here it must not close a need.
+
+### Seen is not treated
+
+`mark_seen` records that a clinician made contact. It says nothing about whether
+anything was done, whether the patient improved, or whether they still need a
+bed. **A department can reach total compliance with a time-to-clinician target by
+having somebody walk past every patient in the waiting room**, and target-driven
+systems reliably discover exactly that.
+
+We record contact because it is the only thing we can honestly observe from
+here. `time_to_seen()` is labelled as what it is, the board says so on the panel,
+and we do not call it a quality measure. Naming the weakness is worth more than a
+stronger-sounding metric we cannot support.
+
+Being seen does not take a patient off the reassessment schedule. They stay on
+the board and the clock keeps looking at them — treating "a nurse looked at them
+once" as "somebody else's problem now" is the exact failure this project is named
+after.
+
+### An answer still cannot lower a band
+
+P016 is the proof, and it is the case six phases have been building toward. A
+nurse asks the question, gets an answer, the concerning finding resolves, and the
+engine proposes WATCH:
+
+```
+engine proposes : WATCH
+FINAL           : LOOK   (ratchet held)
+```
+
+The good news we went looking for does not get to move her either. An answer
+produces a fresh assessment that goes through the ratchet like any other, so it
+can raise a band and has no mechanism to lower one. What it does instead is hand
+a nurse documented grounds to de-escalate her deliberately, under their own name
+— which is exactly what Phase 11 priced the question at.
+
+The workflow also does not trust Phase 11's prediction of what the answer would
+do. It applies the real answer and runs the whole pipeline again; reusing the
+earlier figure would let the board show a band that no assessment ever produced.
+
+### An answer is not an observation
+
+Phase 10 drew a line between the world changing and the system noticing. This
+phase draws the matching one: an answer is evidence a **person** gave us, so it
+carries their identifier, whereas a trajectory update is the world moving whether
+anyone is watching. Merging them would make it impossible to tell what we were
+told from what we observed, which is what a retrospective review turns on.
+
+`unable_to_answer` is a real outcome with no effect on the record. It keeps the
+uncertainty, keeps the question available, and resolves nothing. A workflow that
+only accepted answers would push a clinician under time pressure toward guessing
+on the patient's behalf, and a guess entered as an answer is worse than a gap —
+because a gap is visible.
+
+### The log reads causally
+
+The nurse's answer is written **before** the band transition it caused:
+
+```
+#246  t=241  P013   RN-2210 answered "sudden, and the worst ever"
+#247  t=241  P013   WATCH -> PULL    ai_escalation
+                    "risk 59: reports: thunderclap onset"
+```
+
+The first version of this logged the assessment first, and the trail read as
+though the engine had decided something and a human agreed afterwards — the
+reverse of the truth, and invisible unless you went looking for it.
+
+### What the workflow deliberately does not do
+
+It never says who to see next. The board presents three lists precisely because
+a single blended ranking would hide a clinical trade-off inside weights nobody
+agreed, and a workflow layer answering "who next?" would collapse them straight
+back into that number. The nurse chooses. We record what they chose.
+
 ## The safety guard
 
 A weighted score is a good instrument for ranking and a bad one for absolutes.
@@ -784,7 +896,8 @@ vital-sign ranges in `data/clinical_thresholds.json`, confidence weights in
 override policy in `data/ratchet_config.json`, log settings in
 `data/audit_config.json`, clock horizon and event caps in
 `data/simulation_config.json`, and the question bank and its ranking weights in
-`data/questions.json`. Nothing a judge might question is hard-coded in the
+`data/questions.json`, and clinician action policy in
+`data/workflow_config.json`. Nothing a judge might question is hard-coded in the
 engine.
 
 Reassessment intervals and time-to-clinician targets both live in
@@ -831,5 +944,7 @@ instrument; its value figures are a possibility measure over our own synthetic
 answers, not a calibrated expected value of information. The time-to-clinician
 targets on the board are simulated demonstration values that no department has
 agreed, and the board reports need rather than allocating anything: it does not
-assign staff, reserve beds or decide who is seen next.
+assign staff, reserve beds or decide who is seen next. Marking a patient seen
+records clinical contact and nothing more: it is not a measure of care quality,
+and a department optimising it could score perfectly without treating anybody.
 `docs/limitations.md` sets out what real validation would require.

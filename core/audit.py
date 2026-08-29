@@ -311,6 +311,15 @@ def render_entry(entry: AuditEntry) -> str:
                 f"OVERRIDE by {entry.actor_id}")
     elif entry.event == OVERRIDE_REJECTED:
         head = f"override REFUSED: {p.get('rejection', '')}"
+    elif entry.event == "patient_seen":
+        head = (f"SEEN by {entry.actor_id} at {p.get('band_when_seen')} "
+                f"after {p.get('waited_minutes')} min")
+    elif entry.event == "question_answered":
+        changed = "" if p.get("changed_record") else "  (record unchanged)"
+        head = (f"{entry.actor_id} answered \"{p.get('answer')}\""
+                f"{changed}")
+    elif entry.event == "question_unanswered":
+        head = f"question asked, NO ANSWER obtained ({p.get('question_id')})"
     else:
         head = entry.event
 

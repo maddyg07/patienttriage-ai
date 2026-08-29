@@ -7,6 +7,7 @@ Run from the repository root:
     python -m scripts.build_dashboard                    # simulated shift, medium_ed
     python -m scripts.build_dashboard --at 120           # the board at minute 120
     python -m scripts.build_dashboard --intake           # arrival state, no clock
+    python -m scripts.build_dashboard --worked           # after a nurse works the board
     python -m scripts.build_dashboard --hospital small_ed
     python -m scripts.build_dashboard --out board.html
 
@@ -23,6 +24,7 @@ from core.config import HospitalConfig
 from core.patient_loader import load_patients
 from core.questions import QuestionEngine
 from core.ratchet import Ratchet, explain_history
+from core.workflow import Workflow
 from core.risk_engine import RiskEngine, explain
 from core.safety_rules import explain_rules
 from core.uncertainty import explain_confidence
@@ -44,6 +46,7 @@ def main():
     out = Path(_arg(args, "--out", str(DEFAULT_OUT)))
     at = _arg(args, "--at")
     intake = "--intake" in args
+    worked = "--worked" in args
 
     engine = RiskEngine(HospitalConfig.load(profile))
     questions = QuestionEngine(engine)
@@ -60,11 +63,24 @@ def main():
     else:
         clock = SimulationClock(engine, patients)
         timeline = clock.run(until_minute=int(at) if at else None)
+        workflow = None
+        if worked:
+            # A short worked example so the seen panel has something in it.
+            # Deliberately behind a flag: the default board is the department
+            # as the clock left it, with nobody having been to see anyone.
+            workflow = Workflow(engine, ratchet=clock.ratchet)
+            staged = build_board_from_clock(clock, timeline, questions,
+                                            at_minute=int(at) if at else None)
+            for card in staged.overdue()[:3]:
+                workflow.mark_seen(card.patient, card.assessment,
+                                   "RN-2210", staged.at_minute)
         board = build_board_from_clock(
-            clock, timeline, questions,
+            clock, timeline, questions, workflow=workflow,
             at_minute=int(at) if at else None)
         source = (f"simulated shift to minute {board.at_minute}, "
                   f"{len(timeline.records)} assessments")
+        if worked:
+            source += ", 3 patients seen by RN-2210"
 
     page = render_html(board, explain, explain_confidence, explain_rules,
                        explain_history)
@@ -76,6 +92,7 @@ def main():
     print(f"  hospital   : {board.hospital.name}")
     print(f"  bands      : {counts}")
     print(f"  overdue    : {len(board.overdue())} past their care target")
+    print(f"  seen       : {len(board.seen())} by a clinician")
     print(f"  questions  : {len(board.questions())} shown, "
           f"{board.questions_withheld()} withheld by the cap")
 

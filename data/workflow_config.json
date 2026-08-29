@@ -1,0 +1,28 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION SETTINGS. Not a clinical governance policy. A real department would set every value below with its clinical lead, not inherit ours.",
+
+  "_what_this_file_is": "Phase 12 built a board that reports. This is the small set of things a clinician can DO to it. Every action requires an identifier, every action is written to the audit log, and there is no automated path to any of them -- see the no_automated_path note below, which is the safety property this phase exists for.",
+
+  "_no_automated_path": "Nothing in this system can mark a patient as seen. Only a person can, and only under their own identifier. That restriction is the whole point: 'waiting past target' is the panel that says the department is not keeping up, and a system able to clear its own overdue list could make that panel look healthy without anybody being treated. An engine that can improve its own metrics will eventually be tuned to do so, whether or not anyone intends it.",
+
+  "actions": {
+    "require_actor_id": true,
+    "min_note_chars": 0,
+    "_min_note_note": "Zero on purpose, and it is not an oversight. Phase 8 requires a typed reason for a DE-ESCALATION because that act overrides evidence the system has recorded. Seeing a patient overrides nothing -- demanding a paragraph before a nurse can record that they attended someone would tax the correct behaviour and produce a wall of 'seen' notes documenting nothing. Reasons are required where a human contradicts the record, not where they act on it."
+  },
+
+  "seen": {
+    "clears_overdue": true,
+    "_clears_overdue_note": "Marking a patient seen stops the time-to-clinician clock for them, because that target measures time to first clinical contact and nothing else.",
+    "_what_seen_does_not_mean": "SEEN IS NOT TREATED, AND NOT RESOLVED. This flag records that a clinician made contact. It says nothing about whether anything was done, whether the patient improved, or whether they still need a bed. A department can hit total compliance with a time-to-clinician target by having somebody walk past every patient in the waiting room, and target-driven systems reliably discover exactly that. We record the contact because it is the only thing we can honestly observe from here, and we say plainly that it is a weak measure rather than dressing it up as a quality one.",
+    "keep_reassessing_after_seen": true,
+    "_keep_reassessing_note": "A patient who has been seen and is still waiting is still deteriorating-capable, so the clock keeps re-assessing them. Stopping would turn 'a nurse looked at them once' into 'they are now somebody else's problem', which is the failure this project is named after."
+  },
+
+  "answers": {
+    "record_who_answered": true,
+    "_record_who_answered_note": "An answer is evidence a PERSON gave us, so it carries their identifier. This is a different kind of event from a trajectory update, which is the world changing whether anyone is watching or not, and merging the two would make it impossible to tell what we were told from what we observed.",
+    "allow_unable_to_answer": true,
+    "_unable_to_answer_note": "Recorded as a real outcome with no effect on the record. It keeps the uncertainty, keeps the question available to ask again, and never resolves anything. A workflow that only let a nurse enter answers would quietly push them toward guessing."
+  }
+}

@@ -234,6 +234,34 @@ def _uncertainty_panel(board: BoardView) -> str:
 </section>"""
 
 
+def _seen_panel(board: BoardView) -> str:
+    seen = board.seen()
+    if not seen:
+        return ""
+    rows = []
+    for card in seen:
+        rows.append(
+            f"<tr><td class='id'>{_esc(card.patient_id)}</td>"
+            f"<td>{_band_cell(card.band)}</td>"
+            f"<td class='num'>{_minutes(card.seen.waited_minutes)}</td>"
+            f"<td>{_esc(card.seen.actor_id)}</td>"
+            f"<td class='dim'>t={card.seen.at_minute}</td></tr>")
+    return f"""
+<section class="panel">
+  <h2>Seen &mdash; {len(seen)} patients</h2>
+  <p class="note"><strong>Seen is not treated.</strong> These patients had
+  contact with a clinician, which is the only thing the time-to-clinician
+  target measures. It says nothing about whether anything was done or whether
+  they still need a bed. They remain on the board and on the reassessment
+  schedule: being seen once is not being safe.</p>
+  <table>
+    <tr><th>ID</th><th>Band</th><th class="num">Waited</th>
+        <th>Seen by</th><th>At</th></tr>
+    {''.join(rows)}
+  </table>
+</section>"""
+
+
 def _overdue_panel(board: BoardView) -> str:
     overdue = board.overdue()
     if not overdue:
@@ -261,7 +289,9 @@ def _overdue_panel(board: BoardView) -> str:
   returning the same band is evidence of an <strong>unmet need</strong>, not
   evidence that things are fine. Nothing in <code>core/</code> reads this
   column &mdash; a queue that escalated people for waiting would reorder itself
-  by patience and be indistinguishable from one that had detected something.</p>
+  by patience and be indistinguishable from one that had detected something.
+  A patient leaves this list only when a <em>person</em> records that they have
+  been seen; nothing in the system can close a need on its own.</p>
   {body}
 </section>"""
 
@@ -413,6 +443,7 @@ def render_html(board: BoardView, explain, explain_confidence,
 <main class="wrap">
 {_queue_panel(board)}
 {_overdue_panel(board)}
+{_seen_panel(board)}
 {_uncertainty_panel(board)}
 {_questions_panel(board)}
 {_detail_panel(board, explain, explain_confidence, explain_rules, explain_history)}
