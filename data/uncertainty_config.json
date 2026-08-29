@@ -21,9 +21,11 @@
   },
 
   "_baseline_note": "Do we know what NORMAL looks like for this specific patient? Multiplicative penalties: a patient with an undocumented face AND no record on file is worse off than either alone. The facial penalty is the largest single number in this file, on purpose -- it is the P016 case.",
+  "_provenance_note": "Phase 6 added WHERE a baseline came from, not just whether one exists. weak_provenance_max_penalty scales with the reliability figures in data/facial_config.json: a baseline the patient recalled themselves costs more confidence than one documented across three prior visits. It costs CONFIDENCE only. A weakly-sourced baseline never adds points, because escalating on weak provenance would fall hardest on patients least likely to have records.",
   "baseline": {
     "facial_abnormal_but_baseline_unknown": 0.70,
     "facial_capture_unavailable": 0.20,
+    "weak_provenance_max_penalty": 0.30,
     "history_zero": 0.40,
     "history_partial": 0.15
   },

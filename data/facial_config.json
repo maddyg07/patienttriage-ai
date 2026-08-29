@@ -1,0 +1,50 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION VALUES -- NOT CLINICAL GUIDELINES. Nothing in this file is derived from outcome data or reviewed by a clinician.",
+
+  "_what_this_file_is_for": "The facial module answers one question -- has this face CHANGED -- and never the question 'is this face normal'. The values below govern how much we trust each kind of answer to 'what did this patient look like before?'. Points themselves live in data/risk_weights.json under 'facial'; this file is about the strength of the BASELINE, not the size of the finding.",
+
+  "_provenance_note": "Not all baselines are equal. A face documented across three prior visits is a stronger claim than a patient's own recollection, which is still far stronger than nothing. Phase 5 confidence reads these figures; the risk SCORE does not. A weaker baseline makes us less certain, never more alarmed -- because escalating on weak provenance would punish exactly the patients least likely to have records, which is the fairness failure this module exists to prevent.",
+
+  "baseline_provenance": {
+    "documented_record": {
+      "reliability": 1.00,
+      "label": "documented in prior clinical record"
+    },
+    "prior_encounter": {
+      "reliability": 0.85,
+      "label": "compared against a previous encounter"
+    },
+    "collateral_report": {
+      "reliability": 0.65,
+      "label": "reported by family or an accompanying person"
+    },
+    "patient_report": {
+      "reliability": 0.50,
+      "label": "patient's own account of their normal appearance"
+    },
+    "none": {
+      "reliability": 0.00,
+      "label": "no baseline available from any source"
+    }
+  },
+
+  "_cluster_note": "A named pattern, not a diagnosis. The module reports that face, speech and one-sided weakness appeared TOGETHER and that this combination is what a hard rule in Phase 7 will act on. It does not say the word 'stroke' as a finding, and it never rules one out.",
+  "cluster": {
+    "require_acute_change": true,
+    "components": ["facial_change", "speech_abnormality", "unilateral_weakness"],
+    "partial_cluster_min_components": 2
+  },
+
+  "_fairness_note": "The counterfactual test in core/facial.py re-runs each patient against every possible baseline_condition and asserts the facial POINTS are unchanged. Documented asymmetry earns zero regardless of what caused it -- congenital, burn, surgical, old stroke. That property is asserted in code rather than promised in a docstring, and the Phase 15 suite runs it over the whole roster.",
+  "fairness": {
+    "counterfactual_conditions": [
+      "none",
+      "congenital",
+      "post_stroke",
+      "burn_or_acid",
+      "surgical",
+      "trauma",
+      "chronic_palsy"
+    ]
+  }
+}

@@ -127,42 +127,38 @@ class FacialSignals:
 
     def acute_change(self) -> Tri:
         """
-        Seed of the Phase 6 reasoning layer: is the appearance ACUTELY changed?
+        Is the appearance ACUTELY changed?
 
-        Deliberately conservative. It returns UNKNOWN whenever it genuinely
-        cannot tell, and Phase 6 / Phase 7 then treat UNKNOWN as a reason to
-        raise uncertainty and recommend faster human review -- never as a
-        reason to relax.
+        Phase 1 implemented this inline as the seed of the reasoning layer.
+        Phase 6 promoted the logic to core/facial.py, which added baseline
+        provenance, a recorded decision path and an executable fairness test.
+        Every branch of the original survives there; this method is kept
+        because it reads naturally at the call sites and because the Phase 1
+        harness asserts against it.
 
-        This is NOT the final classifier. It is one input among many.
+        The import is deliberately deferred. core/facial.py imports this
+        module for its types, so a top-level import here would be circular.
+        One implementation, one direction of dependency, one convenient
+        accessor.
+
+        It returns UNKNOWN whenever it genuinely cannot tell, and Phase 7
+        treats UNKNOWN as a reason to raise uncertainty and recommend faster
+        human review -- never as a reason to relax.
         """
-        if not self.capture_status.has_data:
-            return Tri.UNKNOWN
-
-        # Nothing abnormal seen at all.
-        if self.asymmetry_observed.is_no and self.droop_observed.is_no:
-            return Tri.NO
-
-        # Something was seen. Can we explain it with a documented baseline?
-        if self.baseline_known.is_yes:
-            if self.baseline_asymmetry_present.is_yes:
-                # Known permanent difference. New only if explicitly reported new.
-                if self.change_reported_as_new.is_yes:
-                    return Tri.YES
-                if self.change_reported_as_new.is_no:
-                    return Tri.NO
-                return Tri.UNKNOWN
-            if self.baseline_asymmetry_present.is_no:
-                # Documented symmetric baseline + asymmetry now = new finding.
-                return Tri.YES
-
-        # No usable baseline. We must NOT guess in either direction.
-        return Tri.UNKNOWN
+        from core.facial import acute_change as _acute_change
+        return _acute_change(self)
 
     def has_stroke_cluster(self) -> bool:
-        """Droop/asymmetry + speech + one-sided weakness appearing together."""
-        face = self.asymmetry_observed.is_yes or self.droop_observed.is_yes
-        return face and self.speech_abnormality.is_yes and self.unilateral_weakness.is_yes
+        """
+        Droop/asymmetry + speech + one-sided weakness appearing together.
+
+        Delegates to core/facial.py for the same reason acute_change() does:
+        one implementation. Note the module never calls this pattern a
+        diagnosis in any user-facing output -- it reports that three findings
+        appeared together, and Phase 7 acts on the combination.
+        """
+        from core.facial import _cluster_components
+        return len(_cluster_components(self)) >= 3
 
 
 # ---------------------------------------------------------------------------

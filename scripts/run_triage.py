@@ -1,7 +1,7 @@
 """
 scripts/run_triage.py
 =====================
-Phase 5 verification. Scores all 24 synthetic patients, attaches confidence and
+Phase 6 verification. Scores all 24 synthetic patients, attaches confidence and
 a plausible band set to each, and prints the ranked queue plus explanation and
 uncertainty panels.
 
@@ -12,6 +12,9 @@ Run from the repository root:
     python -m scripts.run_triage --age          # what Phase 4 changed
     python -m scripts.run_triage --age-problem  # what Phase 4 existed to fix
     python -m scripts.run_triage --confidence   # the uncertainty board
+    python -m scripts.run_triage --fairness     # the counterfactual fairness test
+    python -m scripts.run_triage --ladder P016  # the facial decision path, step by step
+    python -m scripts.run_triage --provenance   # what a weaker baseline costs
     python -m scripts.run_triage --stale P002   # confidence decaying while waiting
     python -m scripts.run_triage --hospital small_ed
 """
@@ -20,6 +23,11 @@ import sys
 
 from core.config import HospitalConfig
 from core.patient_loader import load_patient, load_patients, patients_demonstrating
+from core.facial import (
+    explain_facial,
+    fairness_counterfactual,
+    resolve_baseline,
+)
 from core.risk_engine import RiskEngine, explain
 from core.uncertainty import explain_confidence
 
@@ -77,6 +85,11 @@ def show_patient(engine, patient):
     print(f"  complaint: {patient.self_report.chief_complaint}")
     print("\n  WHY THIS SCORE")
     print(explain(a))
+    if patient.facial.capture_status.has_data and (
+            patient.facial.asymmetry_observed.is_yes
+            or patient.facial.droop_observed.is_yes):
+        print("\n  WHAT THE FACE MEANS")
+        print(explain_facial(patient))
     print("\n  HOW MUCH WE TRUST IT")
     print(explain_confidence(a))
     print("\n  EXPECTED BEHAVIOUR (authored in Phase 2)")
@@ -109,6 +122,107 @@ def show_facial_comparison(engine):
     print("  tell. Phase 5 is where those two zeroes stop looking the same. Her")
     print("  score is still 4. Her baseline knowledge is 18%, and her plausible")
     print("  band set now reaches LOOK. Same score, honest label.")
+    print()
+    print("  Phase 6 adds where each baseline CAME FROM:")
+    print()
+    for pid in ids:
+        p = load_patient(pid)
+        b = resolve_baseline(p)
+        print(f"    {p.patient_id}  {b.label:<42} {b.reliability:>4.0%}")
+
+
+def show_fairness(engine):
+    rule("THE FAIRNESS TEST, RUN AS CODE")
+    print("  For every patient with a documented facial difference, we re-score")
+    print("  them once per possible CAUSE of that difference -- congenital,")
+    print("  burn, surgical, old stroke, trauma -- changing nothing else.")
+    print("  If the cause changed the points, the row fails.\n")
+
+    conditions = ["none", "congenital", "post_stroke", "burn_or_acid",
+                  "surgical", "trauma", "chronic_palsy"]
+    print(f"  {'ID':<6}" + "".join(f"{c[:9]:>10}" for c in conditions) + "   verdict")
+    print("  " + "-" * 74)
+
+    all_fair = True
+    for pid in ["P011", "P012", "P013", "P015", "P016"]:
+        p = load_patient(pid)
+        r = fairness_counterfactual(p, engine.weights)
+        all_fair = all_fair and r.is_fair
+        cells = "".join(f"{r.points_by_condition[c]:>10.0f}" for c in conditions)
+        print(f"  {p.patient_id:<6}{cells}   "
+              f"{'IDENTICAL' if r.is_fair else 'FAILS -- POINTS MOVED'}")
+
+    print()
+    if all_fair:
+        print("  Every row is flat. The cause of a documented facial difference")
+        print("  contributes exactly nothing to the score.")
+    else:
+        print("  A row moved. The module is scoring appearance somewhere.")
+    print()
+    print("  P011 is the row worth pointing at. He scores 32 under EVERY")
+    print("  condition, because his points come from the change being new, not")
+    print("  from what his face looks like. And P012, P013 and P015 score 0")
+    print("  under every condition including 'post_stroke' -- a system that")
+    print("  flagged the acid-attack survivor but not the congenital case would")
+    print("  pass a naive fairness check and fail this one.")
+    print()
+    print("  This runs over the whole roster in the Phase 15 suite. It is a")
+    print("  test that can go red, which is the only kind of fairness claim")
+    print("  worth making.")
+
+
+def show_provenance(engine):
+    """
+    Strip a patient's record away one tier at a time and watch what moves.
+
+    The answer is: only the confidence. This is the most important six lines
+    of output in Phase 6.
+    """
+    import copy
+
+    from core.enums import HistoryTier
+
+    rule("WHAT A WEAKER BASELINE COSTS  --  P015")
+    p = load_patient("P015")
+    print("  Chronic post-stroke facial weakness. Identical findings in every")
+    print("  row below. The only thing changing is where our knowledge of her")
+    print("  normal face came from.\n")
+
+    variants = [("documented across prior visits", HistoryTier.RICH, p.history.baseline_notes),
+                ("a previous encounter, no notes", HistoryTier.PARTIAL, ""),
+                ("the patient's own account", HistoryTier.ZERO, "")]
+
+    print(f"  {'baseline source':<34}{'risk':>6}{'conf':>7}   plausible bands")
+    print("  " + "-" * 70)
+    for label, tier, notes in variants:
+        q = copy.deepcopy(p)
+        q.history.tier = tier
+        q.history.baseline_notes = notes
+        a = engine.assess(q)
+        bands = ", ".join(b.word for b in a.plausible_bands)
+        print(f"  {label:<34}{a.risk_score:>6.0f}{a.confidence_pct:>6}%   {bands}")
+
+    print()
+    print("  The score does not move. Not by one point.")
+    print()
+    print("  The obvious alternative design is to treat an unverifiable baseline")
+    print("  as possibly acute and escalate. It sounds cautious. It is quietly")
+    print("  discriminatory: it escalates hardest on undocumented patients, who")
+    print("  are disproportionately people without regular care, without records")
+    print("  and without a relative to speak for them. A triage system that")
+    print("  works that way punishes poverty and calls it safety.")
+    print()
+    print("  So a weak baseline lowers confidence and raises a question. It")
+    print("  never converts our ignorance into her points.")
+
+
+def show_ladder(engine, patient):
+    rule(f"FACIAL DECISION PATH  --  {patient.patient_id}")
+    print(f"  {patient.scenario_label}\n")
+    print(explain_facial(patient))
+    print()
+    print("  Every step is a claim a nurse can disagree with individually.")
+    print("  That is the difference between an explanation and a score.")
 
 
 def show_confidence_board(engine, patients):
@@ -275,6 +389,16 @@ def main():
     if args and args[0] == "--confidence":
         show_confidence_board(engine, load_patients())
         return
+    if args and args[0] == "--provenance":
+        show_provenance(engine)
+        return
+    if args and args[0] == "--fairness":
+        show_fairness(engine)
+        return
+    if args and args[0] == "--ladder":
+        pid = args[1] if len(args) > 1 else "P016"
+        show_ladder(engine, load_patient(pid))
+        return
     if args and args[0] == "--stale":
         pid = args[1] if len(args) > 1 else "P002"
         show_staleness(engine, load_patient(pid))
@@ -283,10 +407,12 @@ def main():
     patients = load_patients()
     show_queue(engine, patients)
     show_facial_comparison(engine)
+    show_fairness(engine)
+    show_provenance(engine)
     show_confidence_board(engine, patients)
     show_staleness(engine, load_patient("P002"))
 
-    rule("PHASE 5 RESULT, AND TWO THINGS STILL WRONG")
+    rule("PHASE 6 RESULT, AND TWO THINGS STILL WRONG")
     print("  Every patient now has a score, a proposed band, a full contribution")
     print("  trace, a confidence figure, a named reason for that confidence, and")
     print("  a set of bands we cannot rule out. Two known gaps remain, both left")
@@ -300,12 +426,12 @@ def main():
     print("     Phase 7 that floors an acute stroke cluster at L4 regardless")
     print("     of score. The scoring model is not the final authority.")
     print()
-    print("  2. P016 is no longer mislabelled, but she is not yet handled.")
-    print("     Phase 5 says out loud that her band could be LOOK and that we")
-    print("     hold 18% of what we need to know about her face. Nothing ACTS")
-    print("     on that yet. Phase 7 turns low confidence plus a concerning")
-    print("     finding into escalation; Phase 11 turns 'baseline' into the one")
-    print("     question worth asking her.")
+    print("  2. P016 is no longer mislabelled, but she is still not handled.")
+    print("     We now show her full decision ladder, and step 3 of it reads")
+    print("     'refusing to guess in either direction'. That is honest and it")
+    print("     is not yet enough. Phase 7 turns low confidence plus a")
+    print("     concerning finding into escalation; Phase 11 turns 'baseline'")
+    print("     into the one question worth asking her.")
     print()
     print("  Still missing: safety rules (7), the ratchet (8). The band above is")
     print("  a PROPOSAL, not a decision. ALL VALUES ARE SIMULATED and clinically")

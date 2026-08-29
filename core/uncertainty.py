@@ -65,6 +65,7 @@ from typing import List, Optional, Tuple
 
 from core.config import HospitalConfig
 from core.enums import CaptureStatus, Consciousness, HistoryTier, TriageBand, Tri
+from core.facial import resolve_baseline
 from core.schema import Assessment, DataQuality, Patient, QualityDriver
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -365,6 +366,18 @@ class UncertaintyEngine:
         elif not f.capture_status.has_data:
             quality *= 1.0 - float(cfg["facial_capture_unavailable"])
             reasons.append("no facial baseline comparison possible (no capture)")
+        elif looks_abnormal:
+            # Phase 6: we have a baseline and it resolved the question. How
+            # good is the baseline itself? A face documented across three prior
+            # visits is a stronger claim than the patient's own recollection.
+            # This costs confidence only; it never adds points.
+            baseline = resolve_baseline(patient)
+            shortfall = 1.0 - baseline.reliability
+            if shortfall > 0:
+                quality *= 1.0 - float(cfg["weak_provenance_max_penalty"]) * shortfall
+                reasons.append(
+                    f"baseline is {baseline.label} "
+                    f"({baseline.reliability:.0%} reliability), not a clinical record")
 
         if patient.history.tier is HistoryTier.ZERO:
             quality *= 1.0 - float(cfg["history_zero"])

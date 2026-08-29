@@ -46,7 +46,8 @@ asymmetry is a mechanism here, not a slogan.
 acid-attack scarring or chronic post-stroke weakness must not be flagged as an
 emergency because their face is unusual. We separate *what a patient looks like*
 from *what has changed acutely*, and we return `UNKNOWN` rather than guessing
-when no baseline exists.
+when no baseline exists. The claim is enforced by a counterfactual test that can
+fail, not by a comment.
 
 **3. Visible uncertainty.** Every output carries a confidence figure, a named
 reason for it, and a set of plausible bands. Missing history raises uncertainty;
@@ -54,7 +55,7 @@ it never lowers risk.
 
 ## Status
 
-Built in phases. Currently at **Phase 5 — data quality and uncertainty**.
+Built in phases. Currently at **Phase 6 — the facial signal module**.
 
 | Phase | | Status |
 |---|---|---|
@@ -63,8 +64,8 @@ Built in phases. Currently at **Phase 5 — data quality and uncertainty**.
 | 3 | Risk engine | done |
 | 4 | Age-aware layer | done |
 | 5 | Data quality & uncertainty | done |
-| 6 | Facial signal module | next |
-| 7 | Safety guard | |
+| 6 | Facial signal module | done |
+| 7 | Safety guard | next |
 | 8 | Ratchet engine | |
 | 9 | Audit log | |
 | 10 | Simulation clock & re-triage | |
@@ -106,6 +107,9 @@ python -m scripts.run_triage P016            # one patient: score panel + confid
 python -m scripts.run_triage --facial        # the five facial patients side by side
 python -m scripts.run_triage --age           # what age-awareness changed, in both directions
 python -m scripts.run_triage --confidence    # who we understand least
+python -m scripts.run_triage --fairness      # the counterfactual fairness test
+python -m scripts.run_triage --ladder P016   # the facial decision path, step by step
+python -m scripts.run_triage --provenance    # what a weaker baseline costs
 python -m scripts.run_triage --stale P002    # confidence decaying while a patient waits
 python -m scripts.run_triage --hospital small_ed
 ```
@@ -159,6 +163,52 @@ plausible set, always in the safe direction. The band-set *interface* is
 deliberately conformal-shaped, so a calibrated predictor can replace it later
 without changing a single consumer.
 
+## The facial module, and the fairness argument
+
+`core/facial.py` asks exactly one question — **has this face changed?** — and
+never asks whether a face is normal. It has no concept of a correct face. A
+system that scores appearance will, with total consistency, penalise people for
+congenital differences, burn scarring, old strokes and surgery, and those
+patients arrive in emergency departments more often than average, not less.
+
+Three things make the claim checkable rather than rhetorical:
+
+**Baseline provenance.** Not just *whether* a baseline exists but *where it came
+from* — a documented record, a prior encounter, a relative, the patient's own
+recollection, or nothing. Each carries a reliability figure.
+
+**A recorded decision path.** Every verdict reports the ladder it climbed:
+
+```
+1. droop and asymmetry observed -> is it NEW?
+2. baseline available: documented in prior clinical record (reliability 100%)
+3. baseline already shows asymmetry (post_stroke)
+4. and it is reported unchanged -> chronic, not acute
+```
+
+A nurse who disagrees can point at one step. That is not possible with a
+probability.
+
+**An executable fairness test.** `fairness_counterfactual()` re-scores a patient
+once per possible *cause* of a documented facial difference — congenital, burn,
+surgical, old stroke, trauma — changing nothing else, and asserts the facial
+points never move. `--fairness` prints the table; the Phase 15 suite runs it
+across the roster. It is a test that can go red.
+
+### The direction that matters
+
+**A weak baseline lowers confidence. It never raises the score.**
+
+The obvious alternative — treat an unverifiable baseline as possibly acute and
+escalate — sounds cautious and is quietly discriminatory. It escalates hardest
+on undocumented patients, who are disproportionately people without regular
+care, without records, and without a relative to speak for them. Run
+`--provenance` to see the property directly: strip P015's record away one tier
+at a time and her score stays at 66 while confidence falls from 94% to 74%.
+
+The correct response to a missing baseline is to say so loudly and go and find
+out (Phase 11), not to convert our ignorance into the patient's points.
+
 ## Layout
 
 ```
@@ -175,8 +225,9 @@ reasoned about and eventually served over an API without touching the UI.
 
 Every tunable number lives in `data/` behind a visible disclaimer — band
 cutoffs in `data/hospitals/`, point values in `data/risk_weights.json`,
-vital-sign ranges in `data/clinical_thresholds.json`, and confidence weights in
-`data/uncertainty_config.json`. Nothing a judge might question is hard-coded in
+vital-sign ranges in `data/clinical_thresholds.json`, confidence weights in
+`data/uncertainty_config.json`, and baseline reliability in
+`data/facial_config.json`. Nothing a judge might question is hard-coded in
 the engine.
 
 ## Known gaps, left visible on purpose
@@ -186,9 +237,10 @@ the engine.
   score alone. The fix is not to inflate weights until it happens to work; it is
   a hard clinical rule in Phase 7 that floors a stroke cluster at L4 regardless
   of score. The scoring model is not meant to be the final authority.
-- **P016**, facial asymmetry with no baseline anywhere, is now labelled
-  honestly — 18% baseline knowledge, plausible bands WATCH/LOOK — but nothing
-  yet *acts* on it. Phase 7 turns low confidence plus a concerning finding into
+- **P016**, facial asymmetry with no baseline anywhere, is now labelled honestly
+  — 18% baseline knowledge, plausible bands WATCH/LOOK, and a decision path
+  whose third step reads *refusing to guess in either direction*. Nothing yet
+  *acts* on it. Phase 7 turns low confidence plus a concerning finding into
   escalation.
 
 ## What this prototype does not claim
@@ -197,5 +249,8 @@ It does not claim a miss rate. It does not claim clinical accuracy. It has not
 been validated against real patients or real outcomes, and any performance
 figure it prints is a property of our own synthetic data generator, nothing
 more. The confidence percentage is a claim about the quality of our input data
-and is not a probability of any clinical outcome. `docs/limitations.md` sets
+and is not a probability of any clinical outcome. The facial module does not
+diagnose anything: it reports that findings appeared together and that a
+baseline did or did not explain them, and it never uses a diagnosis as a
+finding. `docs/limitations.md` sets
 out what real validation would require.

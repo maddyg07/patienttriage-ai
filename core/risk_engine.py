@@ -38,6 +38,8 @@ WHAT THIS FILE DELIBERATELY DOES NOT DO
     core/age_rules.py.)
   * (Phase 5 attached confidence and plausible bands; the arithmetic lives in
     core/uncertainty.py and is forbidden from touching the score.)
+  * (Phase 6 moved the facial reasoning into core/facial.py, which owns the
+    baseline comparison, the decision path and the fairness counterfactual.)
   * No hard clinical safety rules -- Phase 7. This matters: the scorer is not
     meant to catch everything. Some patterns, such as an acute stroke cluster,
     should be floored at L4 by a RULE regardless of score, precisely because a
@@ -60,6 +62,7 @@ from typing import Dict, List, Optional, Tuple
 from core.age_rules import context_rules, thresholds_for
 from core.config import HospitalConfig
 from core.enums import AgeBand, Consciousness
+from core.facial import score_facial
 from core.schema import VITAL_FIELDS, Assessment, Contribution, Patient
 from core.uncertainty import UncertaintyEngine
 
@@ -328,49 +331,16 @@ class RiskEngine:
 
     def _score_facial(self, patient: Patient) -> List[Contribution]:
         """
-        Points come from ACUTE CHANGE, never from appearance.
+        Delegated to core/facial.py in Phase 6.
 
-        Read the branches below carefully. A patient whose face is asymmetric
-        because of a congenital difference, a burn injury or an old stroke
-        scores ZERO here. The camera saw exactly what it saw in the acute-droop
-        patient. The difference is entirely in the baseline context, which is
-        the point of the whole module.
+        Points come from ACUTE CHANGE, never from appearance. A patient whose
+        face is asymmetric because of a congenital difference, a burn injury or
+        an old stroke scores ZERO here. The camera saw exactly what it saw in
+        the acute-droop patient; the difference is entirely in the baseline
+        context, and core/facial.fairness_counterfactual() proves that claim
+        rather than asserting it.
         """
-        w = self.weights["facial"]
-        f = patient.facial
-
-        def make(key: str, label: str) -> List[Contribution]:
-            spec = w[key]
-            return [Contribution(label, float(spec["points"]), "facial", spec["domain"])]
-
-        if not f.capture_status.has_data:
-            # Degrade, do not guess. Zero points; Phase 5 raises uncertainty.
-            return [Contribution(
-                f"facial signal unavailable ({f.capture_status})",
-                0.0, "facial", "neurological")]
-
-        change = f.acute_change()
-        looks_abnormal = f.asymmetry_observed.is_yes or f.droop_observed.is_yes
-
-        if change.is_yes:
-            if f.has_stroke_cluster():
-                return make("acute_change_with_stroke_cluster",
-                            "ACUTE facial change with speech and one-sided weakness")
-            return make("acute_change_alone", "ACUTE facial change from known baseline")
-
-        if change.is_no:
-            if looks_abnormal:
-                return make("chronic_baseline_explains_it",
-                            f"facial asymmetry present but CHRONIC "
-                            f"({f.baseline_condition}), not an acute finding")
-            return []
-
-        # UNKNOWN. Zero points, recorded loudly. Phase 5 turns this into a
-        # confidence penalty; Phase 11 turns it into a question worth asking.
-        if looks_abnormal:
-            return make("unknown_baseline",
-                        "facial asymmetry with UNKNOWN baseline, cannot tell if acute")
-        return []
+        return score_facial(patient, self.weights)
 
     # -----------------------------------------------------------------------
     # Conflicts between what is said and what is measured
