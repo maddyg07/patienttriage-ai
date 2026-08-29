@@ -1,7 +1,7 @@
 """
 scripts/run_triage.py
 =====================
-Phase 11 verification. Scores all 24 synthetic patients, attaches confidence and
+Phase 12 verification. Scores all 24 synthetic patients, attaches confidence and
 a plausible band set to each, prints the ranked queue plus explanation and
 uncertainty panels, runs the whole roster through a simulated shift, and prices
 the next question worth asking each of them.
@@ -25,6 +25,7 @@ Run from the repository root:
     python -m scripts.run_triage --timeline P014  # one patient through the clock
     python -m scripts.run_triage --questions    # the next question, for everyone
     python -m scripts.run_triage --ask P019     # what turns on one answer
+    python -m scripts.run_triage --board        # the department board
     python -m scripts.run_triage --stale P002   # confidence decaying while waiting
     python -m scripts.run_triage --hospital small_ed
 """
@@ -692,6 +693,88 @@ def show_questions(engine, patients):
     print("  before Round 2, and worth saying first if a judge notices.")
 
 
+def show_board(engine):
+    from app.view_model import build_board_from_clock
+    from core.questions import QuestionEngine
+
+    rule("THE BOARD  --  three lists, deliberately not one number")
+    clock, timeline = _run_clock(engine)
+    board = build_board_from_clock(clock, timeline, QuestionEngine(engine))
+
+    print(f"  {board.hospital.name}, minute {board.at_minute}")
+    counts = board.band_counts()
+    summary = "  ".join(f"{b.word} {counts.get(b, 0)}"
+                        for b in sorted(counts, reverse=True))
+    print(f"  {summary}")
+
+    print("\n  WAITING PAST TARGET")
+    overdue = board.overdue()
+    for card in overdue[:8]:
+        print(f"    {card.patient_id}  {card.band.word:<6}"
+              f"waited {card.waited_minutes:>4} min   "
+              f"target {card.care_target_minutes:>3}   "
+              f"OVER BY {card.overdue_minutes}")
+    if len(overdue) > 8:
+        print(f"    ... and {len(overdue) - 8} more")
+
+    print()
+    print("  This is the problem Phase 11 handed forward, and it is the reason")
+    print("  the dashboard is not a rendering exercise. P014 reaches PULL and")
+    print("  is then re-scored eighteen times with nobody coming to see her.")
+    print("  The clock was doing exactly what it was asked and the answer was")
+    print("  useless, because re-scoring a patient is not treating them. A")
+    print("  reassessment that keeps returning the same band is evidence of an")
+    print("  UNMET NEED, not evidence that things are fine.")
+    print()
+    print("  Waiting time is displayed and never scored. Nothing in core/ reads")
+    print("  it -- core/config.overdue_by() returns minutes, and no engine")
+    print("  calls it. A queue that escalated people for waiting would reorder")
+    print("  itself by patience and be indistinguishable from one that had")
+    print("  detected something.")
+
+    print("\n  WHO WE MIGHT BE WRONG ABOUT")
+    for card in board.by_uncertainty()[:5]:
+        reach = card.could_reach.word if card.could_reach else "-"
+        print(f"    {card.patient_id}  {card.band.word:<6}"
+              f"{card.assessment.confidence_pct:>3}%   "
+              f"gap: {card.dominant_gap:<14}could reach {reach}")
+
+    print("\n  WHAT TO ASK NEXT")
+    for card in board.questions():
+        q = card.next_question
+        print(f"    {card.patient_id}  value {q.value:.2f}  "
+              f"{q.question.cost_seconds:.0f}s")
+        for line in _wrap(q.question.text, 62):
+            print(f"      {line}")
+    withheld = board.questions_withheld()
+    if withheld:
+        print(f"    ({withheld} more scored above threshold and are not shown)")
+
+    print()
+    print("  The cap is the second problem Phase 11 handed forward. An adaptive")
+    print("  questioner with a screen in front of a nurse becomes an")
+    print("  interrogation script by default: it always has one more")
+    print("  reasonable-looking thing it would like to know, and the list grows")
+    print("  until it is ignored wholesale. Showing three means three get read,")
+    print("  and it only works because the ranking underneath it is defensible.")
+
+    held = board.held()
+    if held:
+        print(f"\n  RATCHET HOLDING {len(held)}: "
+              f"{', '.join(c.patient_id for c in held)}")
+        print("  The engine proposes a lower band for these patients and did")
+        print("  not get one. Phase 8 described this cost in prose; the board")
+        print("  counts it.")
+
+    print("\n  THREE LISTS, NOT ONE NUMBER")
+    print("  A single ranking blending acuity, uncertainty and waiting time")
+    print("  would be making a clinical trade-off silently, on weights nobody")
+    print("  agreed, and would be impossible to argue with. Three lists a nurse")
+    print("  can read against each other beat one number they have to trust.")
+    print()
+    print("  python -m scripts.build_dashboard   writes the full board to HTML")
+
+
 def show_rules(engine, patients):
     rule("THE SAFETY GUARD  --  every firing on the board")
     scored = [(p, engine.assess(p)) for p in patients]
@@ -1045,6 +1128,9 @@ def main():
     if args and args[0] == "--confidence":
         show_confidence_board(engine, load_patients())
         return
+    if args and args[0] == "--board":
+        show_board(engine)
+        return
     if args and args[0] == "--questions":
         show_questions(engine, load_patients())
         return
@@ -1104,75 +1190,62 @@ def main():
     show_latency(engine)
     show_questions(engine, patients)
     show_ask(engine, load_patient("P016"))
+    show_board(engine)
 
-    rule("PHASE 11 RESULT  --  a gap becomes a task")
-    print("  Since Phase 5 every assessment has carried a confidence figure")
-    print("  with a named dominant driver. P016 has sat at 18% baseline")
-    print("  knowledge for six phases while the system said, very honestly and")
-    print("  completely uselessly, that it could not tell whether her face had")
-    print("  changed. Naming a gap is not closing one.")
+    rule("PHASE 12 RESULT  --  the board a nurse would actually read")
+    print("  Phase 11 handed this phase two problems rather than a rendering")
+    print("  exercise, and both are answered on the board.")
     print()
-    print("  core/questions.py closes them, by answering one question about the")
-    print("  questions: of everything we could ask, which one is worth asking?")
+    print("  UNMET NEED IS ITS OWN AXIS. P014 reaches PULL and is re-scored")
+    print("  eighteen times with nobody coming to see her. Re-scoring a patient")
+    print("  is not treating them, and a reassessment that keeps returning the")
+    print("  same band is evidence of an unmet need rather than evidence that")
+    print("  things are fine. Time-to-clinician targets now sit in")
+    print("  data/hospitals/ next to staffing, and waiting time is DISPLAYED")
+    print("  and never scored -- core/config.overdue_by() returns minutes and")
+    print("  its only caller is app/view_model.py.")
     print()
-    print("  VALUE IS MEASURED IN DECISIONS, NOT IN INFORMATION. The obvious")
-    print("  ranking is by confidence gained, and it is the wrong objective. A")
-    print("  question that takes a patient from 72% to 95% and leaves them in")
-    print("  the same band has tidied our records; it has not changed anything")
-    print("  about their care. So questions are ranked on whether any answer")
-    print("  could move the band, confidence is secondary, and cost can demote")
-    print("  a question but never rescue one that changes no decision.")
+    print("  THE QUESTION QUEUE IS CAPPED. An adaptive questioner with a screen")
+    print("  in front of a nurse becomes an interrogation script by default: it")
+    print("  always has one more reasonable-looking thing it would like to know,")
+    print("  and the list grows until it is ignored wholesale. Three are shown,")
+    print("  the number withheld is stated, and the cap is only defensible")
+    print("  because the Phase 11 ranking underneath it is.")
     print()
-    print("  P024 is the check on that. He holds the LOWEST confidence on the")
-    print("  board and the questioner has nothing to ask him, because he is")
-    print("  already at CODE. An information-maximising questioner would have")
-    print("  gone straight to the sickest patient in the department to improve")
-    print("  its records.")
+    print("  THREE LISTS, NOT ONE NUMBER. Who is sickest, who has waited past")
+    print("  their target, and who we are least sure about are three separate")
+    print("  panels. A single ranking blending them would be making a clinical")
+    print("  trade-off silently, on weights nobody agreed, and would be")
+    print("  impossible to argue with.")
     print()
-    print("  DIRECTION IS PRICED. An answer that could reveal a patient is")
-    print("  sicker changes what happens today. An answer that could only")
-    print("  propose a LOWER band changes nothing on its own, because the")
-    print("  ratchet holds a waiting patient where they are -- its worth is in")
-    print("  handing a nurse documented grounds for a review. Real, and priced")
-    print("  at a fraction. That is also the answer to what the questioner does")
-    print("  for P016: it cannot move her, it can only let somebody move her.")
+    print("  ZERO LOGIC IN THE UI, AND IT IS CHECKABLE. app/view_model.py")
+    print("  assembles objects core/ already produced; app/dashboard.py formats")
+    print("  strings and is handed its explain_* functions rather than importing")
+    print("  them, so it has no route to core/ at all. Nothing is re-assessed to")
+    print("  draw the board: each card carries the last assessment the clock")
+    print("  actually produced. That matters more than it sounds -- scoring the")
+    print("  roster fresh at minute 240 renders P014 as WATCH, because the two")
+    print("  deteriorations she had while waiting are simply not in the")
+    print("  calculation. The snapshot view this project exists to argue against")
+    print("  would have shipped on a dashboard that looked completely correct.")
     print()
-    print("  IT IS NOT EXPECTED VALUE OF INFORMATION, and we do not call it")
-    print("  that. Textbook VOI weights each outcome by the probability of that")
-    print("  answer, and we have no such probabilities -- nothing here is")
-    print("  calibrated against real patients, so any prior over how a patient")
-    print("  is likely to answer would be invented, and it would be the")
-    print("  invented number driving the whole ranking. We compute the RANGE of")
-    print("  outcomes instead: a question is valuable if SOME answer changes")
-    print("  the band. Deliberately biased toward asking, and the interface is")
-    print("  expectation-shaped so a calibrated answer model drops in later.")
+    print("  requirements.txt still lists no third-party dependencies. The")
+    print("  board is one self-contained HTML file with no CDN, no fonts and no")
+    print("  scripts, which opens offline on any machine -- and can be diffed,")
+    print("  checked and regenerated deterministically, which a running server")
+    print("  cannot. The boundary is app/view_model.py, so a Streamlit front end")
+    print("  would consume exactly the same BoardView if a product wanted one.")
     print()
-    print("  ONE EARLIER CLAIM RETRACTED. Phase 5 said the largest confidence")
-    print("  penalty would be the best question to ask next. P019 is the")
-    print("  counterexample: her dominant driver is agreement, and the only")
-    print("  question that can move her band addresses completeness. The")
-    print("  docstring in core/schema.py has been corrected rather than left to")
-    print("  age quietly. Uncertainty says where our picture is thin; it does")
-    print("  not say where a decision is fragile.")
+    print("  Still missing: the nurse workflow (13), which turns the board from")
+    print("  something to read into something to act on -- acknowledging a")
+    print("  patient, recording that they have been seen, and answering the")
+    print("  questions this board is currently only able to ask.")
     print()
-    print("  WHAT IT IS WORTH. P019 asked at intake reaches PULL at t=68. Left")
-    print("  to the clock, the same fact arrives on its own at t=74 and is")
-    print("  found at the next scheduled look, t=98. Thirty minutes, for a")
-    print("  fifteen-second question -- and only measurable because Phase 10")
-    print("  built the thing that measures the alternative.")
-    print()
-    print("  Still missing: the dashboard (12), which now has two real problems")
-    print("  to solve rather than a rendering exercise -- P014 sitting at PULL")
-    print("  through eighteen identical reassessments with nobody coming, and a")
-    print("  question queue that has to be shown to a nurse without becoming an")
-    print("  interrogation script.")
-    print()
-    print("  ALL VALUES ARE SIMULATED and clinically unvalidated. The question")
-    print("  bank is ten illustrative prompts that no clinician has reviewed,")
-    print("  and it is NOT a screening instrument. Two of the ten never fire on")
-    print("  this roster, because our synthetic patients arrive volunteering")
-    print("  everything -- real ones answer the question they were asked and no")
-    print("  more, so these figures understate what a questioner is worth.\n")
+    print("  ALL VALUES ARE SIMULATED and clinically unvalidated. The")
+    print("  time-to-clinician targets are demonstration values no department")
+    print("  has agreed, and the board reports need rather than allocating")
+    print("  anything: it does not assign staff, reserve beds, or decide who is")
+    print("  seen next.\n")
 
 
 if __name__ == "__main__":

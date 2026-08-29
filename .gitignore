@@ -10,3 +10,4 @@ env/
 audit_log.jsonl
 .pytest_cache/
 logs/
+board.html

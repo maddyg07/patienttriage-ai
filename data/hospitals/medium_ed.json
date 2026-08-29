@@ -17,6 +17,13 @@
     "L3": 8,
     "L4": 0
   },
+  "_time_to_clinician_note": "SIMULATED DEMONSTRATION VALUES. Minutes a patient in each band should wait before a clinician sees them. This is a SEPARATE axis from acuity and is never an input to any score: exceeding it flags an unmet need for a human to act on, and does not move anyone's band. A queue that escalated people for waiting would reorder itself by patience and be indistinguishable from one that had detected something.",
+  "time_to_clinician_target_minutes": {
+    "L1": 120,
+    "L2": 60,
+    "L3": 10,
+    "L4": 0
+  },
   "surge_multiplier": 3.0,
   "notes": "Default profile used for the competition demo."
 }

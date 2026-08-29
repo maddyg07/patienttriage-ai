@@ -61,7 +61,11 @@ simulated shift are found this way — and the gap between a patient changing an
 the system noticing is reported as a number, because it is a consequence of the
 department's staffing, not of the model.
 
-**5. It knows what to ask.** Rather than reporting a gap, the system prices
+**5. It shows unmet need as its own axis.** The board ranks who is sickest, who
+has waited past their target, and who we are least sure about as three separate
+lists rather than one blended score. Waiting time is displayed and never scored.
+
+**6. It knows what to ask.** Rather than reporting a gap, the system prices
 every question it could ask by re-running the whole pipeline on each possible
 answer, and ranks them by whether the answer could change the band — not by how
 much they would raise confidence. Asking cannot lower anyone's acuity, and a
@@ -69,7 +73,7 @@ patient who cannot answer is routed to collateral sources rather than skipped.
 
 ## Status
 
-Built in phases. Currently at **Phase 11 — value-of-information questions**.
+Built in phases. Currently at **Phase 12 — the department board**.
 
 | Phase | | Status |
 |---|---|---|
@@ -84,8 +88,8 @@ Built in phases. Currently at **Phase 11 — value-of-information questions**.
 | 9 | Audit log | done |
 | 10 | Simulation clock & re-triage | done |
 | 11 | VOI adaptive questions | done |
-| 12 | Dashboard | next |
-| 13 | Nurse workflow | |
+| 12 | Dashboard | done |
+| 13 | Nurse workflow | next |
 | 14 | Surge mode | |
 | 15 | Test suite | |
 | 16 | Docs & privacy | |
@@ -133,6 +137,7 @@ python -m scripts.run_triage --latency       # how long deterioration goes unsee
 python -m scripts.run_triage --timeline P014 # one patient through the clock
 python -m scripts.run_triage --questions     # the next question, for everyone
 python -m scripts.run_triage --ask P019      # what turns on a single answer
+python -m scripts.run_triage --board         # the department board, in the terminal
 python -m scripts.run_triage --stale P002    # confidence decaying while a patient waits
 python -m scripts.run_triage --hospital small_ed
 ```
@@ -602,6 +607,112 @@ This roster therefore systematically *understates* what a questioner is worth,
 and the honest version of the Phase 2 data would author patients with things
 they have not mentioned yet.
 
+## The board
+
+```bash
+python -m scripts.build_dashboard          # writes board.html
+python -m scripts.run_triage --board       # the same thing, in the terminal
+```
+
+One self-contained HTML file. No CDN, no fonts, no scripts, no server — it
+opens by double-clicking, on any machine, offline.
+
+### Three lists, deliberately not one number
+
+A triage dashboard that only ranks by acuity answers one question: who is
+sickest? That is the question the engine is for, and it is not the only one a
+charge nurse needs answered. The board shows three lists side by side:
+
+| | |
+|---|---|
+| **The queue** | Who is sickest. Band first, score within the band. |
+| **Waiting past target** | Who has been waiting longer than their band promised. |
+| **Who we might be wrong about** | Ranked by confidence, lowest first. |
+
+They are separate panels rather than a blended priority score on purpose. A
+single ranking that mixed acuity, uncertainty and waiting time would be making a
+clinical trade-off silently, on weights nobody agreed, and would be impossible to
+argue with. **Three lists a nurse can read against each other beat one number
+they have to trust.**
+
+### The unmet-need axis
+
+Phase 11 handed this phase a problem: `--timeline P014` showed her reaching PULL
+and then being re-scored eighteen times with nobody coming to see her. The clock
+was doing exactly what it was asked and the answer was useless.
+
+```
+P006  PULL   waited  222 min   target  10   OVER BY 212
+P014  PULL   waited  192 min   target  10   OVER BY 182
+P016  LOOK   waited  184 min   target  60   OVER BY 124
+```
+
+Re-scoring a patient is not treating them. A reassessment that keeps returning
+the same band is evidence of an **unmet need**, not evidence that things are
+fine.
+
+Time-to-clinician targets live in `data/hospitals/` next to staffing, and
+**waiting time is displayed and never scored**. `core/config.overdue_by()`
+returns minutes; the only caller is `app/view_model.py`. No engine reads it,
+which is consistent with the Phase 10 rule — a queue that escalated people for
+waiting would reorder itself by patience and be indistinguishable from one that
+had detected something.
+
+### The question queue is capped
+
+The board shows **three** questions and says how many it withheld. An adaptive
+questioner with a screen in front of a nurse becomes an interrogation script by
+default: it always has one more reasonable-looking thing it would like to know,
+and the list grows until it is ignored wholesale. Showing three means three get
+read — and the cap is only defensible because the ranking underneath it is.
+
+### The ratchet's price, counted
+
+Phase 8 described the cost of the one-way mechanism in prose: the queue
+sometimes carries acuity that reality has moved past. The board counts it, and
+names the patients. A department adopting the ratchet should be able to see its
+price on a screen rather than read about it in a design document.
+
+### Zero logic in the UI, and it is checkable
+
+`app/view_model.py` **assembles**: it collects assessments, timelines and
+question values that `core/` and `simulation/` already produced, then sorts,
+groups and labels them. It computes no clinical quantity. `app/dashboard.py`
+formats strings — the four `explain_*` functions are passed *in* rather than
+imported, so the renderer has no route to `core/` at all and cannot accidentally
+start reasoning about a patient.
+
+Nothing is re-assessed to draw the board. Each card carries the last assessment
+the clock actually produced — the one that went through the ratchet, fired the
+safety rules and was written to the audit log. That distinction is not cosmetic:
+assessing the roster fresh at minute 240 scores everyone on the state they
+*arrived* in, and P014 renders as WATCH. That is exactly the snapshot behaviour
+this project argues against, and it would have shipped on a dashboard that looked
+completely correct. `--intake` renders that view deliberately, for comparison.
+
+### Why not Streamlit
+
+`streamlit` and `pandas` have been commented out in `requirements.txt` since
+Phase 1, waiting for this phase. They stay commented out.
+
+- The repository still has **zero third-party dependencies**, which is a real
+  property of a prototype somebody may have to run on an unfamiliar machine.
+- A demo needing a server and a reachable package index is a demo that can fail
+  in the room. This produces a file you can commit, email and attach.
+- A generated file can be diffed, checked and regenerated deterministically. A
+  Streamlit app can only be verified by running it and looking.
+
+None of that argues against Streamlit for a product, and the architecture is
+indifferent: the boundary is `app/view_model.py`, and a Streamlit front end would
+consume exactly the same `BoardView`.
+
+### Colour is never the only signal
+
+Every band carries its word, every overdue patient carries its minutes, and the
+tables read correctly in monochrome, on a printout, and to a screen reader. A
+board where the difference between CODE and PULL is a hue fails the first
+colour-blind nurse who uses it.
+
 ## The safety guard
 
 A weighted score is a good instrument for ranking and a bad one for absolutes.
@@ -656,7 +767,7 @@ against capacity is a nurse's decision (Phase 13) under explicit surge policy
 ```
 core/         engine — framework-free, fully testable
 simulation/   clock.py — event queue, re-triage schedule, detection latency
-app/          Streamlit UI — rendering only, zero logic
+app/          view_model.py + dashboard.py — rendering only, zero logic
 data/         synthetic patients, hospital profiles, weights, thresholds
 tests/        the safety argument, expressed as code
 docs/         architecture · safety · assumptions · privacy · limitations
@@ -676,9 +787,9 @@ override policy in `data/ratchet_config.json`, log settings in
 `data/questions.json`. Nothing a judge might question is hard-coded in the
 engine.
 
-Reassessment intervals are the exception worth naming: they live in
+Reassessment intervals and time-to-clinician targets both live in
 `data/hospitals/`, alongside bed counts and staffing, because that is what they
-are a consequence of — and `--latency` shows what changing them costs.
+are a consequence of.
 
 ## Both long-standing gaps, now closed
 
@@ -717,5 +828,8 @@ its detection-latency figures describe our own scenario file and say nothing
 about throughput or about how a real department behaves. The question bank is
 ten illustrative prompts that no clinician has reviewed and is not a screening
 instrument; its value figures are a possibility measure over our own synthetic
-answers, not a calibrated expected value of information.
+answers, not a calibrated expected value of information. The time-to-clinician
+targets on the board are simulated demonstration values that no department has
+agreed, and the board reports need rather than allocating anything: it does not
+assign staff, reserve beds or decide who is seen next.
 `docs/limitations.md` sets out what real validation would require.

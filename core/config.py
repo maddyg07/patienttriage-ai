@@ -83,6 +83,14 @@ class HospitalConfig:
     # SIMULATED VALUES -- deliberately configurable, not medical truth.
     reassessment_interval_minutes: Dict[TriageBand, int] = None
 
+    # Minutes a patient in each band should wait before a CLINICIAN sees them.
+    # A completely separate axis from acuity, added in Phase 12. Exceeding it
+    # is an unmet need, and it is never an input to any score -- the dashboard
+    # flags it for a human. A queue that escalated people for waiting would
+    # reorder itself by patience and be indistinguishable from one that had
+    # detected something.
+    time_to_clinician_target_minutes: Dict[TriageBand, int] = None
+
     surge_multiplier: float = 3.0
     notes: str = ""
 
@@ -94,6 +102,12 @@ class HospitalConfig:
             TriageBand.L3_PULL: raw["reassessment_interval_minutes"]["L3"],
             TriageBand.L4_CODE: raw["reassessment_interval_minutes"]["L4"],
         }
+        targets = {
+            TriageBand.L1_WATCH: raw["time_to_clinician_target_minutes"]["L1"],
+            TriageBand.L2_LOOK: raw["time_to_clinician_target_minutes"]["L2"],
+            TriageBand.L3_PULL: raw["time_to_clinician_target_minutes"]["L3"],
+            TriageBand.L4_CODE: raw["time_to_clinician_target_minutes"]["L4"],
+        }
         return cls(
             name=raw["name"],
             profile_id=raw["profile_id"],
@@ -103,6 +117,7 @@ class HospitalConfig:
             resus_bays=raw["resus_bays"],
             thresholds=BandThresholds(**raw["band_thresholds"]),
             reassessment_interval_minutes=intervals,
+            time_to_clinician_target_minutes=targets,
             surge_multiplier=raw.get("surge_multiplier", 3.0),
             notes=raw.get("notes", ""),
         )
@@ -125,6 +140,23 @@ class HospitalConfig:
     def reassess_due_after(self, band: TriageBand) -> int:
         return self.reassessment_interval_minutes[band]
 
+    def care_target_for(self, band: TriageBand) -> int:
+        """Minutes this band should wait before a clinician sees them."""
+        return self.time_to_clinician_target_minutes[band]
+
+    def overdue_by(self, band: TriageBand, waited_minutes: int) -> int:
+        """
+        Minutes past the care target. Zero when inside it.
+
+        Returns a NUMBER OF MINUTES, not a risk adjustment, and no caller is
+        able to turn it into one -- nothing in core/ reads it. It exists to be
+        displayed to a person who can act on it.
+        """
+        target = self.care_target_for(band)
+        if target <= 0:
+            return 0        # CODE has no waiting target; they go now
+        return max(0, waited_minutes - target)
+
     def describe(self) -> str:
         lines = [
             f"{self.name}  [{self.profile_id}]",
@@ -143,6 +175,7 @@ class HospitalConfig:
         ):
             lines.append(
                 f"      {band.code} {band.word:<6} {self.reassess_due_after(band):>3} min"
+                f"   (seen within {self.care_target_for(band):>3} min)"
             )
         lines.append(f"  surge         : {self.surge_multiplier}x arrivals")
         return "\n".join(lines)

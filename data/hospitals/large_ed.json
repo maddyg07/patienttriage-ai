@@ -17,6 +17,13 @@
     "L3": 5,
     "L4": 0
   },
+  "_time_to_clinician_note": "SIMULATED DEMONSTRATION VALUES. Minutes a patient in each band should wait before a clinician sees them. This is a SEPARATE axis from acuity and is never an input to any score: exceeding it flags an unmet need for a human to act on, and does not move anyone's band. A queue that escalated people for waiting would reorder itself by patience and be indistinguishable from one that had detected something.",
+  "time_to_clinician_target_minutes": {
+    "L1": 100,
+    "L2": 45,
+    "L3": 10,
+    "L4": 0
+  },
   "surge_multiplier": 3.0,
   "notes": "Band cutoffs are IDENTICAL across all three profiles by design. Capacity changes how often we look at a patient; it never changes how sick we judge them to be."
 }
