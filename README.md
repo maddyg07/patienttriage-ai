@@ -59,8 +59,8 @@ Built in phases. Currently at **Phase 1 — foundations and schema**.
 | Phase | | Status |
 |---|---|---|
 | 1 | Foundations & schema | done |
-| 2 | Synthetic patients (24 authored scenarios) | next |
-| 3 | Risk engine | |
+| 2 | Synthetic patients (24 authored scenarios) | done |
+| 3 | Risk engine | next |
 | 4 | Age-aware layer | |
 | 5 | Data quality & uncertainty | |
 | 6 | Facial signal module | |
@@ -85,6 +85,18 @@ git clone <this-repo>
 cd patienttriage-ai
 python -m scripts.check_setup
 ```
+
+### Explore the synthetic patients
+
+```bash
+python -m scripts.show_patients              # the full 24-patient roster
+python -m scripts.show_patients P014         # the patient who deteriorates while waiting
+python -m scripts.show_patients P013         # acid-attack survivor: asymmetric face, not an emergency
+python -m scripts.show_patients --coverage   # which Round 2 requirement each patient covers
+```
+
+Five patients present with an abnormal-looking face. Only one is an acute
+change. That distinction is the point of the project.
 
 ## Layout
 
