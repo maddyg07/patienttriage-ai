@@ -90,6 +90,47 @@ def show_facial_comparison(engine):
     print("  false reassurance.")
 
 
+def build_phase3_engine(profile="medium_ed"):
+    """
+    Reconstruct the Phase 3 engine: adult thresholds for everyone, no age
+    context rules. Used only to show what age-awareness actually bought us.
+    """
+    from core.risk_engine import _load, THRESHOLDS_FILE, WEIGHTS_FILE
+    thresholds = {"adult": _load(THRESHOLDS_FILE)["adult"]}
+    weights = _load(WEIGHTS_FILE)
+    weights = {**weights, "age_context": {
+        k: {"points": 0, "domain": v["domain"]}
+        for k, v in weights["age_context"].items()}}
+    return RiskEngine(HospitalConfig.load(profile), thresholds, weights)
+
+
+def show_age_comparison(engine):
+    rule("WHAT AGE-AWARENESS CHANGED  (Phase 3 vs Phase 4)")
+    old = build_phase3_engine(engine.hospital.profile_id)
+    rows = []
+    for p in load_patients():
+        a_old, a_new = old.assess(p), engine.assess(p)
+        if a_old.proposed_band != a_new.proposed_band or abs(a_old.risk_score - a_new.risk_score) >= 5:
+            rows.append((p, a_old, a_new))
+
+    print(f"  {'ID':<6}{'age':>5}  {'band':<11}{'adult-only':>11}{'age-aware':>11}   direction")
+    print("  " + "-" * 72)
+    for p, a_old, a_new in sorted(rows, key=lambda r: -r[2].risk_score):
+        if a_new.risk_score > a_old.risk_score:
+            direction = f"UP    {a_old.proposed_band.word} -> {a_new.proposed_band.word}"
+        else:
+            direction = f"down  {a_old.proposed_band.word} -> {a_new.proposed_band.word}"
+        age = int(p.age_years) if p.age_years >= 1 else p.age_years
+        print(f"  {p.patient_id:<6}{age:>5}  {str(p.age_band):<11}"
+              f"{a_old.risk_score:>11.0f}{a_new.risk_score:>11.0f}   {direction}")
+
+    print()
+    print("  Both directions matter. Age-awareness is not a safety dial that")
+    print("  only turns one way: it removed points the children never should")
+    print("  have been charged, and it found risk in older patients that a")
+    print("  single adult table could not see.")
+
+
 def show_age_problem(engine):
     rule("THE PROBLEM PHASE 4 EXISTS TO FIX")
     print("  Phase 3 applies ADULT thresholds to every patient, including")
@@ -147,13 +188,16 @@ def main():
     if args and args[0] == "--age-problem":
         show_age_problem(engine)
         return
+    if args and args[0] == "--age":
+        show_age_comparison(engine)
+        return
 
     patients = load_patients()
     show_queue(engine, patients)
     show_facial_comparison(engine)
-    show_age_problem(engine)
+    show_age_comparison(engine)
 
-    rule("PHASE 3 RESULT, AND TWO THINGS IT GETS WRONG")
+    rule("PHASE 4 RESULT, AND TWO THINGS STILL WRONG")
     print("  Every patient now has a score, a proposed band, and a full")
     print("  contribution trace. Two known gaps, both left visible on purpose:")
     print()
@@ -166,9 +210,12 @@ def main():
     print("     of score. That is the architecture working as designed: the")
     print("     scoring model is not the final authority.")
     print()
-    print("  2. P004 and P005 are scored against ADULT thresholds. Phase 4.")
+    print("  2. P016, the unknown-baseline facial patient, sits last at 4/100.")
+    print("     Correct scoring, wrong outcome. Phase 5 turns 'we cannot")
+    print("     tell' into visible low confidence, and Phase 7 turns low")
+    print("     confidence plus a concerning finding into escalation.")
     print()
-    print("  Still missing: age awareness (4), confidence (5), safety rules")
+    print("  Still missing: confidence (5), safety rules")
     print("  (7), the ratchet (8). The band above is a PROPOSAL, not a")
     print("  decision. ALL VALUES ARE SIMULATED and clinically unvalidated.\n")
 

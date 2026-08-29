@@ -2,7 +2,6 @@
   "_disclaimer": "SIMULATED DEMONSTRATION WEIGHTS -- NOT CLINICAL GUIDELINES. These point values express relative concern for a prototype demonstration. They are not derived from outcome data and carry no clinical authority.",
   "_design_note": "Weights are deliberately readable. A judge should be able to open this file and see exactly why a patient scored what they scored. That transparency is the reason we chose a weighted engine over a trained model on synthetic data.",
   "_domains": "Every signal belongs to a clinical domain. Domains are CAPPED, because correlated findings must not stack. A breathless patient may trip seven separate respiratory signals; that is one clinical problem, not seven. Without caps, an asthma exacerbation scores the same as a cardiac arrest.",
-
   "domain_caps": {
     "neurological": 60,
     "respiratory": 45,
@@ -11,7 +10,29 @@
     "general": 20,
     "conflict": 10
   },
-
+  "_age_context_note": "Age-specific reasoning that no threshold table can express. Each rule is named so it appears in the explanation panel and can be individually tested. SIMULATED DEMONSTRATION VALUES.",
+  "age_context": {
+    "infant_reduced_feeding_or_responsiveness": {
+      "points": 14,
+      "domain": "neurological"
+    },
+    "pediatric_cannot_self_report": {
+      "points": 4,
+      "domain": "general"
+    },
+    "geriatric_anticoagulated_head_injury": {
+      "points": 20,
+      "domain": "neurological"
+    },
+    "geriatric_rate_limited_masking": {
+      "points": 10,
+      "domain": "circulatory"
+    },
+    "geriatric_atypical_presentation": {
+      "points": 12,
+      "domain": "general"
+    }
+  },
   "vitals": {
     "severe_deviation": 22,
     "mild_deviation": 9,
@@ -24,64 +45,184 @@
       "temperature_c": "infection"
     }
   },
-
   "symptoms": {
-    "thunderclap onset":       {"points": 26, "domain": "neurological"},
-    "worst headache of life":  {"points": 22, "domain": "neurological"},
-    "seizure":                 {"points": 25, "domain": "neurological"},
-    "facial droop":            {"points": 20, "domain": "neurological"},
-    "slurred speech":          {"points": 20, "domain": "neurological"},
-    "unilateral weakness":     {"points": 18, "domain": "neurological"},
-    "arm weakness":            {"points": 18, "domain": "neurological"},
-    "confusion":               {"points": 16, "domain": "neurological"},
-    "lethargy":                {"points": 14, "domain": "neurological"},
-    "numbness":                {"points": 10, "domain": "neurological"},
-    "headache":                {"points":  4, "domain": "neurological"},
-    "chest pain":              {"points": 18, "domain": "circulatory"},
-    "chest tightness":         {"points": 12, "domain": "respiratory"},
-    "chest discomfort":        {"points": 12, "domain": "circulatory"},
-    "sweating":                {"points":  8, "domain": "circulatory"},
-    "breathlessness":          {"points": 14, "domain": "respiratory"},
-    "wheeze":                  {"points": 10, "domain": "respiratory"},
-    "cough":                   {"points":  3, "domain": "respiratory"},
-    "rigors":                  {"points": 10, "domain": "infection"},
-    "fever":                   {"points":  5, "domain": "infection"},
-    "poor feeding":            {"points": 10, "domain": "general"},
-    "head strike":             {"points":  8, "domain": "general"},
-    "abdominal pain":          {"points":  8, "domain": "general"},
-    "dizziness":               {"points":  6, "domain": "general"},
-    "vomiting":                {"points":  6, "domain": "general"},
-    "nausea":                  {"points":  4, "domain": "general"},
-    "swelling":                {"points":  2, "domain": "general"},
-    "sore throat":             {"points":  2, "domain": "infection"}
+    "thunderclap onset": {
+      "points": 26,
+      "domain": "neurological"
+    },
+    "worst headache of life": {
+      "points": 22,
+      "domain": "neurological"
+    },
+    "seizure": {
+      "points": 25,
+      "domain": "neurological"
+    },
+    "facial droop": {
+      "points": 20,
+      "domain": "neurological"
+    },
+    "slurred speech": {
+      "points": 20,
+      "domain": "neurological"
+    },
+    "unilateral weakness": {
+      "points": 18,
+      "domain": "neurological"
+    },
+    "arm weakness": {
+      "points": 18,
+      "domain": "neurological"
+    },
+    "confusion": {
+      "points": 16,
+      "domain": "neurological"
+    },
+    "lethargy": {
+      "points": 14,
+      "domain": "neurological"
+    },
+    "numbness": {
+      "points": 10,
+      "domain": "neurological"
+    },
+    "headache": {
+      "points": 4,
+      "domain": "neurological"
+    },
+    "chest pain": {
+      "points": 18,
+      "domain": "circulatory"
+    },
+    "chest tightness": {
+      "points": 12,
+      "domain": "respiratory"
+    },
+    "chest discomfort": {
+      "points": 12,
+      "domain": "circulatory"
+    },
+    "sweating": {
+      "points": 8,
+      "domain": "circulatory"
+    },
+    "breathlessness": {
+      "points": 14,
+      "domain": "respiratory"
+    },
+    "wheeze": {
+      "points": 10,
+      "domain": "respiratory"
+    },
+    "cough": {
+      "points": 3,
+      "domain": "respiratory"
+    },
+    "rigors": {
+      "points": 10,
+      "domain": "infection"
+    },
+    "fever": {
+      "points": 5,
+      "domain": "infection"
+    },
+    "poor feeding": {
+      "points": 10,
+      "domain": "general"
+    },
+    "head strike": {
+      "points": 8,
+      "domain": "general"
+    },
+    "abdominal pain": {
+      "points": 8,
+      "domain": "general"
+    },
+    "dizziness": {
+      "points": 6,
+      "domain": "general"
+    },
+    "vomiting": {
+      "points": 6,
+      "domain": "general"
+    },
+    "nausea": {
+      "points": 4,
+      "domain": "general"
+    },
+    "swelling": {
+      "points": 2,
+      "domain": "general"
+    },
+    "sore throat": {
+      "points": 2,
+      "domain": "infection"
+    }
   },
-
   "observed": {
-    "consciousness_unresponsive":      {"points": 30, "domain": "neurological"},
-    "consciousness_responds_to_pain":  {"points": 25, "domain": "neurological"},
-    "consciousness_responds_to_voice": {"points": 18, "domain": "neurological"},
-    "skin_pallor_or_cyanosis":         {"points": 10, "domain": "circulatory"},
-    "visible_bleeding":                {"points":  8, "domain": "general"},
-    "gait_abnormal":                   {"points":  4, "domain": "general"}
+    "consciousness_unresponsive": {
+      "points": 30,
+      "domain": "neurological"
+    },
+    "consciousness_responds_to_pain": {
+      "points": 25,
+      "domain": "neurological"
+    },
+    "consciousness_responds_to_voice": {
+      "points": 18,
+      "domain": "neurological"
+    },
+    "skin_pallor_or_cyanosis": {
+      "points": 10,
+      "domain": "circulatory"
+    },
+    "visible_bleeding": {
+      "points": 8,
+      "domain": "general"
+    },
+    "gait_abnormal": {
+      "points": 4,
+      "domain": "general"
+    }
   },
-
   "voice": {
-    "slurred_speech":                {"points": 18, "domain": "neurological"},
-    "unable_to_speak_full_sentence": {"points": 14, "domain": "respiratory"},
-    "breathlessness_between_words":  {"points":  8, "domain": "respiratory"}
+    "slurred_speech": {
+      "points": 18,
+      "domain": "neurological"
+    },
+    "unable_to_speak_full_sentence": {
+      "points": 14,
+      "domain": "respiratory"
+    },
+    "breathlessness_between_words": {
+      "points": 8,
+      "domain": "respiratory"
+    }
   },
-
   "facial": {
-    "acute_change_with_stroke_cluster": {"points": 32, "domain": "neurological"},
-    "acute_change_alone":               {"points": 15, "domain": "neurological"},
-    "chronic_baseline_explains_it":     {"points":  0, "domain": "neurological"},
-    "unknown_baseline":                 {"points":  0, "domain": "neurological"}
+    "acute_change_with_stroke_cluster": {
+      "points": 32,
+      "domain": "neurological"
+    },
+    "acute_change_alone": {
+      "points": 15,
+      "domain": "neurological"
+    },
+    "chronic_baseline_explains_it": {
+      "points": 0,
+      "domain": "neurological"
+    },
+    "unknown_baseline": {
+      "points": 0,
+      "domain": "neurological"
+    }
   },
-
   "conflict": {
-    "denial_contradicted_by_evidence": {"points": 8, "domain": "conflict"}
+    "denial_contradicted_by_evidence": {
+      "points": 8,
+      "domain": "conflict"
+    }
   },
-
   "pain": {
     "severe_pain_threshold": 8,
     "severe_pain_points": 6,

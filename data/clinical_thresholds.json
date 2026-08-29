@@ -1,14 +1,56 @@
 {
   "_disclaimer": "SIMULATED DEMONSTRATION THRESHOLDS -- NOT CLINICAL GUIDELINES. These values were written by the project team to be internally plausible for a prototype. They are not drawn from any validated source, have not been reviewed by a clinician, and must never be used for real triage.",
-  "_phase_note": "Phase 3 defines the ADULT band only. Phases 4 adds infant, child, adolescent and geriatric. Until then the engine falls back to adult values for every age, which is deliberately unsafe and is demonstrated as such by scripts/run_triage.py.",
-  "_reading_the_bands": "For each vital: critical_low < low < high < critical_high. A value outside low..high is a MILD deviation. A value outside critical_low..critical_high is a SEVERE deviation. spo2 has no upper bound.",
+  "_reading_the_bands": "For each vital: critical_low < low < high < critical_high. A value outside low..high is a MILD deviation. A value outside critical_low..critical_high is a SEVERE deviation. A null bound means that direction is not scored. spo2 has no upper bound.",
+  "_why_age_matters": "A heart rate of 168 is an emergency in a 58-year-old and unremarkable in an eight-month-old. A temperature of 37.9 is nothing in an adult and is worth noticing in a frail 80-year-old who may not mount a fever at all. One adult-calibrated table is not a simplification, it is a safety defect. These five tables exist so the same number can mean different things.",
+  "_geriatric_note": "The geriatric table is narrower than the adult table in both directions. Older patients decompensate with smaller deviations, are more vulnerable to hypothermia, and often mount a blunted fever response, so the upper temperature bound is LOWER than the adult one rather than higher.",
+
+  "infant": {
+    "_span": "under 1 year",
+    "heart_rate":       {"critical_low": 90,  "low": 100,  "high": 160,  "critical_high": 180},
+    "respiratory_rate": {"critical_low": 20,  "low": 25,   "high": 55,   "critical_high": 65},
+    "spo2":             {"critical_low": 90,  "low": 94,   "high": null, "critical_high": null},
+    "temperature_c":    {"critical_low": 35.5,"low": 36.0, "high": 38.0, "critical_high": 39.0},
+    "systolic_bp":      {"critical_low": 60,  "low": 70,   "high": 105,  "critical_high": 115},
+    "diastolic_bp":     {"critical_low": 35,  "low": 40,   "high": 65,   "critical_high": 75}
+  },
+
+  "child": {
+    "_span": "1 to 11 years",
+    "heart_rate":       {"critical_low": 60,  "low": 70,   "high": 130,  "critical_high": 150},
+    "respiratory_rate": {"critical_low": 12,  "low": 16,   "high": 30,   "critical_high": 40},
+    "spo2":             {"critical_low": 90,  "low": 94,   "high": null, "critical_high": null},
+    "temperature_c":    {"critical_low": 35.5,"low": 36.0, "high": 38.5, "critical_high": 39.5},
+    "systolic_bp":      {"critical_low": 70,  "low": 80,   "high": 115,  "critical_high": 125},
+    "diastolic_bp":     {"critical_low": 40,  "low": 45,   "high": 75,   "critical_high": 85}
+  },
+
+  "adolescent": {
+    "_span": "12 to 17 years",
+    "heart_rate":       {"critical_low": 45,  "low": 55,   "high": 115,  "critical_high": 135},
+    "respiratory_rate": {"critical_low": 10,  "low": 12,   "high": 24,   "critical_high": 30},
+    "spo2":             {"critical_low": 90,  "low": 94,   "high": null, "critical_high": null},
+    "temperature_c":    {"critical_low": 35.0,"low": 36.0, "high": 38.3, "critical_high": 39.5},
+    "systolic_bp":      {"critical_low": 85,  "low": 95,   "high": 145,  "critical_high": 165},
+    "diastolic_bp":     {"critical_low": 45,  "low": 55,   "high": 90,   "critical_high": 105}
+  },
 
   "adult": {
-    "heart_rate":        {"critical_low": 40,  "low": 50,   "high": 110,  "critical_high": 130},
-    "respiratory_rate":  {"critical_low": 8,   "low": 10,   "high": 22,   "critical_high": 28},
-    "spo2":              {"critical_low": 90,  "low": 94,   "high": null, "critical_high": null},
-    "temperature_c":     {"critical_low": 35.0,"low": 36.0, "high": 38.3, "critical_high": 39.5},
-    "systolic_bp":       {"critical_low": 90,  "low": 100,  "high": 180,  "critical_high": 200},
-    "diastolic_bp":      {"critical_low": 50,  "low": 60,   "high": 110,  "critical_high": 120}
+    "_span": "18 to 64 years",
+    "heart_rate":       {"critical_low": 40,  "low": 50,   "high": 110,  "critical_high": 130},
+    "respiratory_rate": {"critical_low": 8,   "low": 10,   "high": 22,   "critical_high": 28},
+    "spo2":             {"critical_low": 90,  "low": 94,   "high": null, "critical_high": null},
+    "temperature_c":    {"critical_low": 35.0,"low": 36.0, "high": 38.3, "critical_high": 39.5},
+    "systolic_bp":      {"critical_low": 90,  "low": 100,  "high": 180,  "critical_high": 200},
+    "diastolic_bp":     {"critical_low": 50,  "low": 60,   "high": 110,  "critical_high": 120}
+  },
+
+  "geriatric": {
+    "_span": "65 years and over",
+    "heart_rate":       {"critical_low": 40,  "low": 50,   "high": 105,  "critical_high": 125},
+    "respiratory_rate": {"critical_low": 8,   "low": 10,   "high": 20,   "critical_high": 26},
+    "spo2":             {"critical_low": 91,  "low": 94,   "high": null, "critical_high": null},
+    "temperature_c":    {"critical_low": 35.5,"low": 36.0, "high": 37.8, "critical_high": 38.8},
+    "systolic_bp":      {"critical_low": 95,  "low": 110,  "high": 180,  "critical_high": 200},
+    "diastolic_bp":     {"critical_low": 50,  "low": 60,   "high": 105,  "critical_high": 115}
   }
 }

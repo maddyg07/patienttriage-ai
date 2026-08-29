@@ -34,7 +34,8 @@ equal to the sum of the panel.
 
 WHAT THIS FILE DELIBERATELY DOES NOT DO
 ---------------------------------------
-  * No age-specific thresholds yet -- Phase 4.
+  * (Phase 4 added age-aware thresholds and age context rules; see
+    core/age_rules.py.)
   * No uncertainty or confidence -- Phase 5.
   * No hard clinical safety rules -- Phase 7. This matters: the scorer is not
     meant to catch everything. Some patterns, such as an acute stroke cluster,
@@ -55,6 +56,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from core.age_rules import context_rules, thresholds_for
 from core.config import HospitalConfig
 from core.enums import AgeBand, Consciousness
 from core.schema import VITAL_FIELDS, Assessment, Contribution, Patient
@@ -106,6 +108,7 @@ class RiskEngine:
         raw += self._score_observed(patient)
         raw += self._score_voice(patient)
         raw += self._score_facial(patient)
+        raw += context_rules(patient, self.weights)
         raw += self._detect_conflicts(patient)
 
         contributions, cap_notes = self._apply_domain_caps(raw)
@@ -162,13 +165,13 @@ class RiskEngine:
 
     def _threshold_band(self, age_band: AgeBand) -> dict:
         """
-        Phase 3: adult values for everyone.
+        Select the age-appropriate threshold table.
 
-        Phase 4 replaces this method body with a real per-age lookup. Nothing
-        else in the engine will change, which is why the lookup lives here
-        rather than inline below.
+        Phase 3 returned adult values for everyone. Phase 4 replaced only this
+        method body and added core/age_rules.py; no other scorer changed. That
+        is the payoff of isolating the lookup instead of inlining it.
         """
-        return self.thresholds.get(age_band.value, self.thresholds["adult"])
+        return thresholds_for(age_band, self.thresholds)
 
     def _score_vitals(self, patient: Patient) -> List[Contribution]:
         table = self._threshold_band(patient.age_band)
