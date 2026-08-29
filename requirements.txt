@@ -1,0 +1,7 @@
+# PatientTriage.ai -- Round 2 prototype
+# Phase 1 needs nothing beyond the Python standard library (3.10+).
+# The lines below are commented out until the phase that introduces them.
+
+# streamlit>=1.32      # Phase 12 -- dashboard
+# pandas>=2.0          # Phase 12 -- queue table
+# pytest>=8.0          # Phase 15 -- safety test suite

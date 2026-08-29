@@ -1,0 +1,22 @@
+{
+  "profile_id": "small_ed",
+  "name": "Small Rural Emergency Department",
+  "_disclaimer": "SIMULATED DEMONSTRATION VALUES. Not derived from any real hospital and not clinical guidelines.",
+  "daily_volume": 100,
+  "nurses_on_shift": 3,
+  "treatment_beds": 8,
+  "resus_bays": 1,
+  "band_thresholds": {
+    "l2_min": 25,
+    "l3_min": 50,
+    "l4_min": 75
+  },
+  "reassessment_interval_minutes": {
+    "L1": 45,
+    "L2": 30,
+    "L3": 10,
+    "L4": 0
+  },
+  "surge_multiplier": 3.0,
+  "notes": "Low staffing means reassessment intervals are longer. The engine compensates by flagging overdue patients rather than by lowering anyone's acuity."
+}

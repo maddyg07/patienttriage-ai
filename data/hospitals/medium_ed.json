@@ -1,0 +1,22 @@
+{
+  "profile_id": "medium_ed",
+  "name": "Medium District Hospital Emergency Department",
+  "_disclaimer": "SIMULATED DEMONSTRATION VALUES. Not derived from any real hospital and not clinical guidelines.",
+  "daily_volume": 300,
+  "nurses_on_shift": 8,
+  "treatment_beds": 24,
+  "resus_bays": 3,
+  "band_thresholds": {
+    "l2_min": 25,
+    "l3_min": 50,
+    "l4_min": 75
+  },
+  "reassessment_interval_minutes": {
+    "L1": 30,
+    "L2": 20,
+    "L3": 8,
+    "L4": 0
+  },
+  "surge_multiplier": 3.0,
+  "notes": "Default profile used for the competition demo."
+}

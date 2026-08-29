@@ -1,0 +1,22 @@
+{
+  "profile_id": "large_ed",
+  "name": "Large Urban Trauma Centre Emergency Department",
+  "_disclaimer": "SIMULATED DEMONSTRATION VALUES. Not derived from any real hospital and not clinical guidelines.",
+  "daily_volume": 550,
+  "nurses_on_shift": 16,
+  "treatment_beds": 60,
+  "resus_bays": 6,
+  "band_thresholds": {
+    "l2_min": 25,
+    "l3_min": 50,
+    "l4_min": 75
+  },
+  "reassessment_interval_minutes": {
+    "L1": 25,
+    "L2": 15,
+    "L3": 5,
+    "L4": 0
+  },
+  "surge_multiplier": 3.0,
+  "notes": "Band cutoffs are IDENTICAL across all three profiles by design. Capacity changes how often we look at a patient; it never changes how sick we judge them to be."
+}
