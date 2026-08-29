@@ -219,6 +219,24 @@ class UncertaintyEngine:
         anything, and its absence is already charged to completeness. Charging
         it twice would make missing data look like conflict, which it is not.
 
+        KNOWN GAP, found by the Phase 15 suite and pinned by
+        tests/test_known_gaps.py. That reasoning is right about double-charging
+        and wrong about something else: because `split` is computed over the
+        modalities that SPOKE, deleting a dissenting one raises this driver's
+        quality. On nineteen deletions across the roster the gain outruns the
+        completeness penalty and total confidence RISES when data is removed.
+        Not measuring the thing that disagrees should never be a way to look
+        more certain.
+
+        The fix is a pessimistic split -- assume a silent modality takes
+        whichever side makes the disagreement worst, which is this project's
+        own "unknown never becomes no" rule applied to a driver that currently
+        breaks it. It is not shipped here because it re-calibrates every
+        confidence figure in the repository, and doing that in the same commit
+        as the suite that found it would mean changing the numbers and the
+        thing that checks the numbers at once. The gap is measured rather than
+        described: run `python -m scripts.run_tests` and it is reported.
+
         Disagreement is not an error to be resolved by picking a winner. It is
         a fact about the patient that the nurse should see. P010 denies
         breathlessness while desaturating; P020 reports severe pain with a

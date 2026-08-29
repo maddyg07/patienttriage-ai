@@ -74,7 +74,12 @@ so reassessments are deferred — never dropped, and never by relaxing anyone's
 band. Capacity constrains how often we look, not how sick we judge someone to be,
 and the invariant is asserted in code rather than promised.
 
-**8. It knows what to ask.** Rather than reporting a gap, the system prices
+**8. Its claims can go red.** Every safety property above is a test organised by
+claim, and the central ones carry a companion test that breaks the invariant
+deliberately to prove the check works. Two known gaps are pinned rather than
+deleted so they cannot be quietly forgotten.
+
+**9. It knows what to ask.** Rather than reporting a gap, the system prices
 every question it could ask by re-running the whole pipeline on each possible
 answer, and ranks them by whether the answer could change the band — not by how
 much they would raise confidence. Asking cannot lower anyone's acuity, and a
@@ -82,7 +87,7 @@ patient who cannot answer is routed to collateral sources rather than skipped.
 
 ## Status
 
-Built in phases. Currently at **Phase 14 — surge mode**.
+Built in phases. Currently at **Phase 15 — the test suite**.
 
 | Phase | | Status |
 |---|---|---|
@@ -100,8 +105,8 @@ Built in phases. Currently at **Phase 14 — surge mode**.
 | 12 | Dashboard | done |
 | 13 | Nurse workflow | done |
 | 14 | Surge mode | done |
-| 15 | Test suite | next |
-| 16 | Docs & privacy | |
+| 15 | Test suite | done |
+| 16 | Docs & privacy | next |
 | 17 | Demo mode | |
 
 ## Running it
@@ -112,6 +117,7 @@ Requires Python 3.10 or newer. There are still no third-party dependencies.
 git clone <this-repo>
 cd patienttriage-ai
 python -m scripts.check_setup
+python -m scripts.run_tests                  # the safety argument, run as code
 ```
 
 ### Explore the synthetic patients
@@ -939,6 +945,93 @@ manually would be nearer ten minutes and would have a third of the capacity
 modelled here. We cannot validate three minutes and nobody should treat it as
 measured.
 
+## The safety argument, run as code
+
+```bash
+python -m scripts.run_tests          # 52 checks, grouped by claim
+python -m scripts.run_tests --gaps   # only the known gaps
+```
+
+Plain `unittest` from the standard library — **requirements.txt still lists
+nothing**, so this runs on a clean machine with no network. `pytest` discovers
+`tests/` unchanged if you prefer it.
+
+### Organised by claim, not by module
+
+A conventional suite mirrors the source tree: `test_ratchet.py` tests
+`core/ratchet.py`. That is the right shape when the question is *did I break the
+code?* It is the wrong shape here, because the question this project has to
+answer is *is the claim true?* — and the claims do not live inside single
+modules. "Missing data never lowers risk" is enforced by the loader, the
+uncertainty engine, the facial module and the safety guard acting together, and
+a test of any one of them would pass while the property was broken.
+
+So each file is a claim, each test is named after the sentence in the README it
+defends, and the runner prints them as claims:
+
+```
+CLAIM  Nothing in this system can mark a patient as seen. Only a person can.
+  ok    a full shift marks nobody seen
+  ok    marking seen requires an identifier
+  ok    an answer can raise a band and cannot lower one
+  ok    the same patient cannot be closed twice
+```
+
+### A test that cannot fail is not evidence
+
+Several properties here are enforced by something **not existing** — the ratchet
+has no branch that lowers a band, `AuditLog` has no `update` method, nothing can
+mark a patient seen. Asserting that an impossible thing did not happen passes on
+an empty function.
+
+So the central claims carry a companion test that plants a violation and confirms
+the check catches it. Those are marked `[has teeth]`. Sabotaging the ratchet with
+a one-line change turns three tests red across two different claim groups and
+flips the verdict.
+
+### Writing the suite made a vague claim precise
+
+The first draft of "missing data never lowers risk" asserted that deleting a
+measured value can never lower the score. That is **false, and it should be**:
+points are earned by evidence, and a patient cannot be charged for a fever nobody
+measured. Demanding otherwise would require the engine to retain points for
+findings it does not have.
+
+What must hold is narrower and is the thing that actually protects people: an
+absent value contributes *nothing* — it is never scored as though it had been
+measured and found normal. The README claim now says that, because the test
+forced us to say what we meant.
+
+### Two known gaps, pinned rather than deleted
+
+A suite containing only things that pass is a suite that has stopped looking. Two
+properties this project implies and does not currently hold are marked
+`expectedFailure`, so they appear in every run and the suite reports it if one is
+ever fixed:
+
+**Removing information can raise confidence.** Found by this suite. The agreement
+driver computes its split over the modalities that *spoke*, so silencing a
+dissenting one removes a disagreement — 13 of 210 single-item deletions across the
+roster increase confidence. Not measuring the thing that disagrees should never be
+a way to look more certain. The fix is a pessimistic split (assume a silent
+modality takes whichever side makes the disagreement worst — this project's own
+"unknown never becomes no" rule applied to the one driver that breaks it). It is
+not shipped in the same commit as the suite that found it, because that would mean
+changing every confidence figure in the repository and the thing that checks them
+at the same time.
+
+**The acute-on-chronic facial case is not in the roster.** Open since Phase 6. A
+patient with documented asymmetry whose family says it got worse *today* is
+arguably the hardest facial case in practice; the module handles it correctly and
+no authored patient exercises it.
+
+### What a green run does not mean
+
+It is not clinical validation. These tests confirm the system behaves the way this
+repository says it does. They say nothing about whether that behaviour is
+clinically correct, and every threshold they assert against is a simulated
+demonstration value.
+
 ## The safety guard
 
 A weighted score is a good instrument for ranking and a bad one for absolutes.
@@ -996,7 +1089,7 @@ simulation/   clock.py — event queue, re-triage schedule, detection latency
               surge.py — nurse-time budget, deferral policy, load testing
 app/          view_model.py + dashboard.py — rendering only, zero logic
 data/         synthetic patients, hospital profiles, weights, thresholds
-tests/        the safety argument, expressed as code
+tests/        the safety argument, expressed as code — organised by claim
 docs/         architecture · safety · assumptions · privacy · limitations
 ```
 

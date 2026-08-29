@@ -4,4 +4,8 @@
 
 # streamlit>=1.32      # Phase 12 -- dashboard
 # pandas>=2.0          # Phase 12 -- queue table
-# pytest>=8.0          # Phase 15 -- safety test suite
+# pytest>=8.0          # Phase 15 -- NOT required. The suite is plain
+#                      # unittest from the standard library, so
+#                      # `python -m scripts.run_tests` works on a clean
+#                      # machine with no network. pytest discovers and runs
+#                      # tests/ unchanged if you prefer it.

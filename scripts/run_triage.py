@@ -28,6 +28,8 @@ Run from the repository root:
     python -m scripts.run_triage --board        # the department board
     python -m scripts.run_triage --workflow     # a nurse working the board
     python -m scripts.run_triage --surge        # what breaks under 3x load
+
+Run `python -m scripts.run_tests` for the safety argument as executable claims.
     python -m scripts.run_triage --stale P002   # confidence decaying while waiting
     python -m scripts.run_triage --hospital small_ed
 """
