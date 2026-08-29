@@ -1,0 +1,40 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION VALUES. Not a surge escalation policy, not derived from any real department's operating procedure, and not reviewed by anyone clinical.",
+
+  "_what_surge_changes": "Capacity constrains OBSERVATION, never ACUITY. Under load a department cannot reassess everyone on schedule, so something has to give -- and the whole design question is what. The tempting answer is to relax the band thresholds so fewer patients come out as PULL when there are no PULL beds. That is triaging by bed count, it makes the department look better while making the patients no safer, and it is the one thing this file will not do. What gives is how often we can LOOK at people. How sick we judge them to be does not move.",
+
+  "_where_this_was_decided": "Phase 1, actually. data/hospitals/large_ed.json has carried the line 'Band cutoffs are IDENTICAL across all three profiles by design. Capacity changes how often we look at a patient; it never changes how sick we judge them to be' since the first commit. This file is that sentence turned into a mechanism.",
+
+  "capacity": {
+    "reassessments_per_nurse_per_hour": 20,
+    "_rate_note": "Three minutes per reassessment, and this number is an ASSUMPTION DOING REAL WORK -- it is the premise of the whole project, priced. A re-check here is a set of observations on a waiting patient, and it is fast precisely because the system takes part of it: the sensors capture, the engine re-scores, and the nurse confirms. A department doing this manually would be nearer ten minutes and would have a third of the capacity modelled below. We cannot validate three minutes and nobody should treat it as measured. A reassessment here means a real set of observations on a real patient, not a re-score -- the engine can re-score the whole department in milliseconds, and that is precisely why the engine is not the bottleneck. The scarce resource is a nurse's time, so that is what gets budgeted.",
+    "nurse_fraction_available_for_reassessment": 0.5,
+    "_fraction_note": "Half a nurse's time. The other half is everything else they do -- new arrivals, treatment, handover, the patients already in beds. A model that assumed nurses spend their whole shift re-checking the waiting room would produce a comfortable capacity figure and would be a lie.",
+    "burst_minutes": 10,
+    "_burst_note": "The budget accumulates for up to ten minutes, so a quiet stretch can be spent on a busy one. Beyond that it stops accumulating: unused capacity from an hour ago is not available now, because the nurse who had it has gone home or is doing something else."
+  },
+
+  "deferral": {
+    "recheck_after_minutes": 5,
+    "starvation_minutes": 10,
+    "_starvation_note": "Minutes past due after which a patient's reserved-capacity floor has decayed to zero and they can spend the last token like anybody else. This is the anti-starvation rule and it is not a tuning parameter -- without it the reserve policy detected NOT ONE of the fifteen deteriorations in the roster at 3x load, because it spent the whole budget re-checking patients whose band never moved. Rationing observation by current acuity is rationing by what we already know, and observation exists to find out what we do not. THE VALUE BELOW IS NOT A SOLUTION. Sweeping it shows a monotone trade-off with no safe setting: at 0 the department detects 14 of 15 deteriorations and defers 81% of its PULL re-checks; at 90 it protects the PULL patients and detects 1. Every value in between trades one failure for the other. 10 is a defensible compromise for this roster and it is NOT a recommendation -- a real department sets this with its clinical governance lead, in advance and in daylight, not at 2am when the waiting room is full.",
+    "max_deferrals_logged": 400,
+    "_never_cancel": "A reassessment that cannot happen now is DEFERRED, never dropped. The distinction is the whole safety argument of this file: a deferred patient is one somebody will get to, and a dropped one is a patient nobody will ever look at again. The event stays in the queue and keeps asking.",
+    "reserved_capacity_fraction": {
+      "L1": 0.6,
+      "L2": 0.3,
+      "L3": 0.0,
+      "L4": 0.0
+    },
+    "_reserved_note": "How much of the budget a band is NOT allowed to consume, held back for anyone sicker. A WATCH patient may only spend capacity while more than 60% of the burst budget remains; a PULL patient may spend the last token. This reserves headroom for higher-acuity patients we have not met yet, and it is the mechanism by which scarcity is rationed by acuity rather than by whoever happened to be next in the queue."
+  },
+
+  "never_relaxed_under_surge": [
+    "band_thresholds",
+    "safety_rules",
+    "ratchet",
+    "time_to_clinician_targets",
+    "audit_logging"
+  ],
+  "_never_relaxed_note": "Asserted in code, not just listed here -- see SurgeController.assert_invariants(). Time-to-clinician targets stay put deliberately and it is the least comfortable item on the list: under surge the overdue panel goes red and stays red. That is the correct behaviour. Moving the target because the department is busy would mean the number reports how busy we are willing to admit we are, rather than how long patients waited, and a target that relaxes under load measures nothing at all."
+}

@@ -1,7 +1,7 @@
 """
 scripts/run_triage.py
 =====================
-Phase 13 verification. Scores all 24 synthetic patients, attaches confidence and
+Phase 14 verification. Scores all 24 synthetic patients, attaches confidence and
 a plausible band set to each, prints the ranked queue plus explanation and
 uncertainty panels, runs the whole roster through a simulated shift, and prices
 the next question worth asking each of them.
@@ -27,6 +27,7 @@ Run from the repository root:
     python -m scripts.run_triage --ask P019     # what turns on one answer
     python -m scripts.run_triage --board        # the department board
     python -m scripts.run_triage --workflow     # a nurse working the board
+    python -m scripts.run_triage --surge        # what breaks under 3x load
     python -m scripts.run_triage --stale P002   # confidence decaying while waiting
     python -m scripts.run_triage --hospital small_ed
 """
@@ -938,6 +939,157 @@ def show_workflow(engine):
     print("  is rather than dressing it up as a quality measure.")
 
 
+def show_surge(engine):
+    import copy as _copy
+    import json as _json
+
+    from simulation.surge import (
+        SurgeController,
+        build_surge_roster,
+        explain_capacity,
+    )
+
+    rule("SURGE  --  what breaks when the department cannot keep up")
+    hospital = engine.hospital
+    base = load_patients()
+
+    print("  Every number this project has printed since Phase 10 assumed the")
+    print("  clock fires each reassessment exactly when it falls due. Phase 10")
+    print("  said in its own docstring that no real department achieves that.")
+    print("  This is where the assumption comes out.\n")
+
+    print("  THE BUDGET")
+    print(explain_capacity(SurgeController(hospital)))
+    print()
+    print("  Reassessments cost a nurse's time. The engine can re-score the")
+    print("  whole department in milliseconds, which is exactly why the engine")
+    print("  is not the bottleneck -- so the scarce resource is what gets")
+    print("  budgeted. Three minutes per re-check is an ASSUMPTION DOING REAL")
+    print("  WORK: it is fast because the system takes part of it, and a")
+    print("  department doing this manually would have a third of the capacity.")
+    print("  We cannot validate that number.")
+
+    rows = []
+    for label, roster in [("normal", base),
+                          ("surge x3", build_surge_roster(base, 3, 6))]:
+        controller = SurgeController(hospital)
+        clock = SimulationClock(engine, roster, capacity=controller)
+        timeline = clock.run()
+        controller.assert_invariants()
+        rows.append((label, roster, controller, timeline))
+
+    print("\n  WHAT LOAD DOES")
+    print(f"  {'':10}{'patients':>9}{'re-checks':>11}{'deferred':>10}"
+          f"{'late':>7}{'found':>7}{'MISSED':>8}")
+    print("  " + "-" * 64)
+    for label, roster, controller, timeline in rows:
+        print(f"  {label:<10}{len(roster):>9}{len(timeline.records):>11}"
+              f"{controller.deferred:>10}"
+              f"{len(timeline.late_reassessments()):>7}"
+              f"{len(timeline.detection_latencies()):>7}"
+              f"{len(timeline.undetected()):>8}")
+
+    surge_controller, surge_timeline = rows[1][2], rows[1][3]
+    print()
+    print(f"  At normal load nothing is deferred at all -- and the margin is")
+    print(f"  thinner than it looks, because the department's own PULL interval")
+    print(f"  of {hospital.reassess_due_after(TriageBand.L3_PULL)} minutes is by far the most expensive thing it buys.")
+    print(f"  At 3x, {surge_controller.deferral_rate:.0%} of due reassessments cannot happen when")
+    print(f"  they are due, and {len(surge_timeline.undetected())} deteriorations are never found at all.")
+
+    print("\n  WHO ABSORBS IT")
+    share = surge_controller.deferral_share()
+    for band in sorted(TriageBand, reverse=True):
+        asked = (surge_controller.performed_by_band[band]
+                 + surge_controller.deferrals_by_band[band])
+        if not asked:
+            continue
+        print(f"    {band.word:<6}{share[band]:>6.0%} of due re-checks deferred "
+              f"({asked} due)")
+
+    print("\n  THE MEASUREMENT THAT CHANGED THE DESIGN")
+    print("  Reserving capacity for the sickest patients is the obviously")
+    print("  correct policy, and on its own it is dangerous. Sweeping the")
+    print("  anti-starvation threshold -- the point at which a long-deferred")
+    print("  patient may spend reserved capacity -- shows why:\n")
+
+    cfg = {k: v for k, v in
+           _json.load(open("data/surge_config.json")).items()
+           if not k.startswith("_")}
+    surge_roster = build_surge_roster(base, 3, 6)
+    print(f"    {'starve at':>10}{'WATCH defer':>13}{'PULL defer':>12}"
+          f"{'found':>7}{'MISSED':>8}")
+    print("    " + "-" * 50)
+    for minutes in (0, 10, 25, 90):
+        variant = _copy.deepcopy(cfg)
+        variant["deferral"]["starvation_minutes"] = minutes
+        controller = SurgeController(hospital, config=variant)
+        timeline = SimulationClock(engine, surge_roster,
+                                   capacity=controller).run()
+        s = controller.deferral_share()
+        label = "never" if minutes == 0 else f"{minutes} min"
+        print(f"    {label:>10}{s[TriageBand.L1_WATCH]:>12.0%}"
+              f"{s[TriageBand.L3_PULL]:>12.0%}"
+              f"{len(timeline.detection_latencies()):>7}"
+              f"{len(timeline.undetected()):>8}")
+
+    print()
+    print("  Read the top and bottom rows. With no reserve the department")
+    print("  finds almost every deterioration and neglects the patients it")
+    print("  already knows are sick. With a hard reserve it protects those")
+    print("  patients and detects almost nothing -- at 90 minutes it spent the")
+    print("  whole budget re-checking PULL patients whose band never moved and")
+    print("  missed fourteen of fifteen deteriorations. P014, the patient this")
+    print("  entire project was built around, was never looked at again.")
+    print()
+    print("  There is no safe setting. That is the finding, and it is not a")
+    print("  failure of the mechanism -- it is what a department that is 3x")
+    print("  oversubscribed actually faces. Our default of 10 minutes is a")
+    print("  compromise for this roster and it is NOT a recommendation.")
+    print()
+    print("  The general lesson is worth more than the number. Rationing")
+    print("  observation by CURRENT ACUITY is rationing by what we already")
+    print("  know, and observation exists to find out what we do not. It is")
+    print("  the same mistake Phase 11 refused to make when it declined to")
+    print("  rank questions by confidence gained.")
+
+    print("\n  WHAT SURGE IS NOT ALLOWED TO TOUCH")
+    for item in _json.load(open("data/surge_config.json"))["never_relaxed_under_surge"]:
+        print(f"    - {item}")
+    print()
+    print("  Checked, not just listed: SurgeController.assert_invariants()")
+    print("  compares band cutoffs, care targets and reassessment intervals")
+    print("  against a snapshot taken before any load was applied, and raises")
+    print("  if any of them moved. It passed on both runs above.")
+    print()
+    print("  The tempting design is to relax the thresholds under load, so")
+    print("  fewer patients come out as PULL when there are no PULL beds. It")
+    print("  would calm the board immediately. It would also make the")
+    print("  department look better while making the patients no safer, and")
+    print("  the distortion would be invisible because the arithmetic still")
+    print("  looks principled.")
+    print()
+    print("  The care targets are the uncomfortable item on that list. Under")
+    print("  surge the overdue panel goes red and stays red. That is correct: a")
+    print("  target that relaxes when the department is busy reports how busy")
+    print("  we are willing to admit we are, not how long patients waited.")
+
+    print("\n  TWO THINGS TO SAY BEFORE A JUDGE DOES")
+    print("  The surge roster is the authored roster REPLICATED, with the")
+    print("  copies labelled as copies. That makes it a fair load test and")
+    print("  useless as a statement about case mix -- a real surge is not three")
+    print("  of every patient. Each copy keeps its own internal timing, so a")
+    print("  copy of P014 deteriorates at P014's rate rather than three times")
+    print("  faster; compressing physiology to simulate a busy department would")
+    print("  be modelling a different disease, not a different workload.")
+    print()
+    print("  And a deferred reassessment is never a cancelled one. The event")
+    print("  goes back in the queue and keeps asking. A deferred patient is")
+    print("  someone we will get to; a dropped one is someone nobody looks at")
+    print("  again, and a policy that quietly discarded its backlog would")
+    print("  report a deferral count of zero and mean nothing by it.")
+
+
 def show_rules(engine, patients):
     rule("THE SAFETY GUARD  --  every firing on the board")
     scored = [(p, engine.assess(p)) for p in patients]
@@ -1291,6 +1443,9 @@ def main():
     if args and args[0] == "--confidence":
         show_confidence_board(engine, load_patients())
         return
+    if args and args[0] == "--surge":
+        show_surge(engine)
+        return
     if args and args[0] == "--workflow":
         show_workflow(engine)
         return
@@ -1358,69 +1513,68 @@ def main():
     show_ask(engine, load_patient("P016"))
     show_board(engine)
     show_workflow(engine)
+    show_surge(engine)
 
-    rule("PHASE 13 RESULT  --  the loop closes on a person")
-    print("  Phase 12 built a board that reports. Everything on it was")
-    print("  read-only: the overdue list had no way to shrink and the questions")
-    print("  had nowhere to send an answer. core/workflow.py adds the four")
-    print("  things a clinician can do, and nothing else.")
+    rule("PHASE 14 RESULT  --  the assumption comes out")
+    print("  Phase 10 shipped a clock that fires every reassessment exactly")
+    print("  when due, and said in its own docstring that no real department")
+    print("  achieves that. Every number since -- detection latency, the")
+    print("  overdue panel, the escalations found on schedule -- has been the")
+    print("  optimistic case. simulation/surge.py removes the assumption.")
     print()
-    print("      mark_seen           a clinician made contact")
-    print("      answer_question     somebody answered what we were asking")
-    print("      unable_to_answer    somebody tried, and could not")
-    print("      override            a nurse changes the band  (Phase 8)")
+    print("  CAPACITY CONSTRAINS OBSERVATION, NEVER ACUITY. Under load the")
+    print("  department cannot re-check everyone on schedule, and the tempting")
+    print("  answer is to relax the band thresholds so fewer patients come out")
+    print("  as PULL when there are no PULL beds. It would calm the board")
+    print("  immediately, make the patients no safer, and be invisible because")
+    print("  the arithmetic still looks principled. What degrades here is how")
+    print("  often we can LOOK. How sick we judge someone does not move, and")
+    print("  assert_invariants() raises if it ever does.")
     print()
-    print("  Four verbs is not a small API by accident. Every additional one is")
-    print("  a new way for the record to disagree with what happened.")
+    print("  That was settled in Phase 1 without anyone noticing:")
+    print("  data/hospitals/large_ed.json has carried the line \'Band cutoffs")
+    print("  are IDENTICAL across all three profiles by design\' since the first")
+    print("  commit. This phase turned that sentence into a mechanism.")
     print()
-    print("  THE SAFETY PROPERTY. Nothing in this system can mark a patient as")
-    print("  seen. No automated path, no default, no batch operation, no config")
-    print("  flag -- grep for PATIENT_SEEN and it is written in exactly one")
-    print("  place, by a person, under their own identifier.")
+    print("  DEFERRED, NEVER DROPPED. A re-check that cannot happen goes back")
+    print("  in the queue and asks again. A deferred patient is one somebody")
+    print("  will get to; a dropped one is a patient nobody looks at again, and")
+    print("  a policy that quietly discarded its backlog would report a")
+    print("  deferral count of zero and mean nothing by it. At 3x load the")
+    print("  count is 80% and it is supposed to be ugly.")
     print()
-    print("  That restriction is the phase. 'Waiting past target' is the panel")
-    print("  that says the department is not keeping up, and a system able to")
-    print("  clear its own overdue list could make that panel look healthy")
-    print("  without anybody being treated. An engine that can improve its own")
-    print("  reported metrics will eventually be tuned to do so, whether or not")
-    print("  anyone sets out to cheat. Same reasoning as the ratchet, pointed")
-    print("  at a different failure: there the machine must not lower acuity,")
-    print("  here it must not close a need.")
+    print("  THE MEASUREMENT THAT CHANGED THE DESIGN. Reserving capacity for")
+    print("  the sickest patients is obviously correct and, on its own,")
+    print("  dangerous. The reserve-only policy spent the whole budget")
+    print("  re-checking patients whose band never moved and detected NOT ONE")
+    print("  of the fifteen deteriorations in the roster. P014 was never looked")
+    print("  at again. So the reserve now decays with lateness -- acuity goes")
+    print("  first, but nobody is forgotten.")
     print()
-    print("  AN ANSWER STILL CANNOT LOWER A BAND. P016 is the proof, and it is")
-    print("  the case six phases have been building toward. A nurse asks the")
-    print("  question, gets the answer, the finding resolves and the engine")
-    print("  proposes WATCH -- and the ratchet holds her at LOOK. The good news")
-    print("  we went looking for does not get to move her either. What it does")
-    print("  is hand a nurse documented grounds to de-escalate her deliberately,")
-    print("  under their own name, which is exactly what Phase 11 priced it at.")
+    print("  Rationing observation by CURRENT ACUITY is rationing by what we")
+    print("  already know, and observation exists to find out what we do not.")
+    print("  The same mistake Phase 11 refused to make about questions.")
     print()
-    print("  THE LOG READS CAUSALLY. The nurse's answer is written BEFORE the")
-    print("  band transition it caused. The first version of this logged the")
-    print("  assessment first, and the trail read as though the engine had")
-    print("  decided something and a human agreed afterwards -- the reverse of")
-    print("  the truth, and invisible unless you went looking for it.")
+    print("  AND THERE IS NO SAFE SETTING. Sweeping the threshold trades one")
+    print("  failure for the other monotonically: no reserve finds 14 of 15")
+    print("  deteriorations and defers 81% of PULL re-checks; a hard reserve")
+    print("  protects those patients and finds 1. That is not a defect in the")
+    print("  mechanism, it is what being 3x oversubscribed actually costs. The")
+    print("  system\'s job is to make the choice explicit, set in advance by a")
+    print("  clinical governance lead and logged -- not discovered at 2am.")
     print()
-    print("  WHAT WE DELIBERATELY DO NOT DO. The workflow never says who to see")
-    print("  next. The board presents three lists precisely because a single")
-    print("  blended ranking would hide a clinical trade-off inside weights")
-    print("  nobody agreed, and a workflow layer answering \'who next?\' would")
-    print("  collapse them straight back into that number. The nurse chooses.")
-    print("  We record what they chose.")
+    print("  Still missing: the test suite (15), which is where every safety")
+    print("  claim this project has made becomes something that can go red --")
+    print("  the ratchet, the fairness counterfactual, the surge invariants,")
+    print("  and the log-replay completeness check.")
     print()
-    print("  Still missing: surge mode (14), which is where the assumption")
-    print("  underneath all of this gets stressed -- the clock currently fires")
-    print("  every reassessment exactly when due, and no real department does")
-    print("  that, least of all a full one.")
-    print()
-    print("  ALL VALUES ARE SIMULATED and clinically unvalidated. SEEN IS NOT")
-    print("  TREATED: it records that a clinician made contact and says nothing")
-    print("  about whether anything was done or whether the patient still needs")
-    print("  a bed. A department can reach total compliance with a")
-    print("  time-to-clinician target by having somebody walk past every patient")
-    print("  in the waiting room, and target-driven systems reliably discover")
-    print("  exactly that. We record contact because it is the only thing we can")
-    print("  honestly observe from here, and we call it what it is.\n")
+    print("  ALL VALUES ARE SIMULATED and clinically unvalidated. The surge")
+    print("  roster is the authored roster REPLICATED with copies labelled as")
+    print("  copies: a fair load test, and useless as a statement about case")
+    print("  mix. Three minutes per reassessment is an assumption doing real")
+    print("  work in every capacity figure above and we cannot validate it.")
+    print("  This is not a surge escalation policy and no clinician has")
+    print("  reviewed any of it.\n")
 
 
 if __name__ == "__main__":

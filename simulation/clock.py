@@ -289,6 +289,9 @@ class Timeline:
     records: List[TimelineRecord] = field(default_factory=list)
     changes: List[WorldChange] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    # (minute, patient_id, band, due_at) for every reassessment that was due
+    # and could not be performed. Empty whenever capacity is unlimited.
+    deferrals: List[tuple] = field(default_factory=list)
 
     def undetected(self) -> List[WorldChange]:
         """Changes still unobserved when the clock stopped."""
@@ -317,6 +320,10 @@ class Timeline:
         for r in self.records:
             out[r.patient_id] = r.final_band
         return out
+
+    def late_reassessments(self) -> List[TimelineRecord]:
+        """Reassessments that happened, but after they were due."""
+        return [r for r in self.records if r.overdue_by > 0]
 
     def unprompted_escalations(self) -> List[TimelineRecord]:
         """
@@ -353,6 +360,7 @@ class SimulationClock:
         patients: List[Patient],
         ratchet: Optional[Ratchet] = None,
         config: Optional[dict] = None,
+        capacity=None,
     ):
         cfg = config or _load(SIMULATION_CONFIG_FILE)
         self.engine = engine
@@ -360,6 +368,11 @@ class SimulationClock:
         self.ratchet = ratchet or Ratchet()
         self.horizon = int(cfg["clock"]["default_horizon_minutes"])
         self.max_events = int(cfg["clock"]["max_events_per_run"])
+
+        # Phase 14. None means unlimited nurse time -- every reassessment
+        # fires exactly when due, which is what Phases 10-13 assumed and no
+        # real department achieves. See simulation/surge.py.
+        self.capacity = capacity
 
         self.roster: Dict[str, Patient] = {p.patient_id: p for p in patients}
         self.state: Dict[str, Patient] = {}          # current state, post-updates
@@ -375,6 +388,7 @@ class SimulationClock:
         # Changes that have happened to a patient but that nobody has looked at
         # yet. The waiting room, in one data structure.
         self._pending: Dict[str, List["WorldChange"]] = {}
+        self._deferred: Dict[str, int] = {}
 
     # -----------------------------------------------------------------------
     # Queue plumbing
@@ -499,6 +513,24 @@ class SimulationClock:
 
         due = self._due_at.get(pid)
         overdue = max(0, event.at_minute - due) if due is not None else 0
+
+        # Phase 14. The reassessment is DUE. Whether it can actually happen
+        # depends on whether a nurse is free, and a refusal defers the event
+        # rather than cancelling it -- the patient stays in the queue and keeps
+        # asking. A dropped reassessment would be a patient nobody looks at
+        # again, which is a different and much worse thing.
+        if self.capacity is not None:
+            band = self.ratchet.band(pid)
+            if band is not None and not self.capacity.request(
+                    event.at_minute, band, due if due is not None else event.at_minute):
+                self._deferred[pid] = self._deferred.get(pid, 0) + 1
+                self._schedule(event.at_minute + self.capacity.recheck_after,
+                               REASSESSMENT, pid, epoch=event.epoch)
+                timeline.deferrals.append(
+                    (event.at_minute, pid, band,
+                     due if due is not None else event.at_minute))
+                return None
+
         return self._assess(pid, event.at_minute, REASSESSMENT, timeline,
                             overdue=overdue)
 

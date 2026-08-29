@@ -69,7 +69,12 @@ lists rather than one blended score. Waiting time is displayed and never scored.
 as seen — there is no automated path to it anywhere. The panel that says the
 department is not keeping up cannot be cleared by the thing being measured.
 
-**7. It knows what to ask.** Rather than reporting a gap, the system prices
+**7. It degrades honestly.** Under load the department cannot re-check everyone,
+so reassessments are deferred — never dropped, and never by relaxing anyone's
+band. Capacity constrains how often we look, not how sick we judge someone to be,
+and the invariant is asserted in code rather than promised.
+
+**8. It knows what to ask.** Rather than reporting a gap, the system prices
 every question it could ask by re-running the whole pipeline on each possible
 answer, and ranks them by whether the answer could change the band — not by how
 much they would raise confidence. Asking cannot lower anyone's acuity, and a
@@ -77,7 +82,7 @@ patient who cannot answer is routed to collateral sources rather than skipped.
 
 ## Status
 
-Built in phases. Currently at **Phase 13 — the nurse workflow**.
+Built in phases. Currently at **Phase 14 — surge mode**.
 
 | Phase | | Status |
 |---|---|---|
@@ -94,8 +99,8 @@ Built in phases. Currently at **Phase 13 — the nurse workflow**.
 | 11 | VOI adaptive questions | done |
 | 12 | Dashboard | done |
 | 13 | Nurse workflow | done |
-| 14 | Surge mode | next |
-| 15 | Test suite | |
+| 14 | Surge mode | done |
+| 15 | Test suite | next |
 | 16 | Docs & privacy | |
 | 17 | Demo mode | |
 
@@ -143,6 +148,7 @@ python -m scripts.run_triage --questions     # the next question, for everyone
 python -m scripts.run_triage --ask P019      # what turns on a single answer
 python -m scripts.run_triage --board         # the department board, in the terminal
 python -m scripts.run_triage --workflow      # a nurse working the board
+python -m scripts.run_triage --surge         # what breaks under 3x load
 python -m scripts.run_triage --stale P002    # confidence decaying while a patient waits
 python -m scripts.run_triage --hospital small_ed
 ```
@@ -825,6 +831,114 @@ a single blended ranking would hide a clinical trade-off inside weights nobody
 agreed, and a workflow layer answering "who next?" would collapse them straight
 back into that number. The nurse chooses. We record what they chose.
 
+## Surge
+
+Phase 10 shipped a clock that fires every reassessment exactly when it falls
+due, and said so in its own docstring: no real department achieves that. Every
+number this project has produced since — detection latency, the overdue panel,
+the escalations found on schedule — has been the optimistic case.
+
+`simulation/surge.py` removes the assumption. Reassessments cost a nurse's time,
+there is a finite amount of it, and when demand exceeds supply something gives.
+
+```
+           patients  re-checks  deferred   late  found  MISSED
+normal           24        242         0      0      5       0
+surge x3         72        353      1156     57      8       7
+```
+
+### Capacity constrains observation, never acuity
+
+The tempting design is to relax the band thresholds under load: score a little
+harder, so fewer patients come out as PULL when there are no PULL beds. It would
+calm the board immediately. It would also make the department look better while
+making the patients no safer, and the distortion would be invisible because the
+arithmetic still looks principled.
+
+So what degrades is **how often we can look**. How sick we judge someone does not
+move by a point. Five things are off limits — band thresholds, safety rules, the
+ratchet, time-to-clinician targets, audit logging — and
+`SurgeController.assert_invariants()` compares them against a snapshot taken
+before any load was applied and raises if any of them moved. Checked, not listed.
+
+This was settled in Phase 1 without anyone noticing. `data/hospitals/large_ed.json`
+has carried the line *"Band cutoffs are IDENTICAL across all three profiles by
+design. Capacity changes how often we look at a patient; it never changes how
+sick we judge them to be"* since the first commit. This phase turns that sentence
+into a mechanism.
+
+The care targets are the uncomfortable item on that list. Under surge the overdue
+panel goes red and stays red — which is correct, because a target that relaxes
+when the department is busy reports how busy we are willing to admit we are
+rather than how long patients waited.
+
+### Deferred, never dropped
+
+A reassessment that cannot happen now goes back in the queue and asks again. It
+is never cancelled. A deferred patient is one somebody will get to; a dropped one
+is a patient nobody looks at again — and a policy that quietly discarded its
+backlog would report a deferral count of zero and mean nothing by it. At 3x load
+the count is 80%, and it is supposed to be ugly.
+
+### The measurement that changed the design
+
+Reserving capacity for the sickest patients is the obviously correct policy, and
+on its own it is dangerous. Sweeping the anti-starvation threshold — the point at
+which a long-deferred patient may spend reserved capacity — shows why:
+
+```
+ starve at  WATCH defer  PULL defer  found  MISSED
+     never         49%         81%     14       1
+    10 min         91%         50%      8       7
+    25 min         97%         31%      6       9
+    90 min         98%         20%      1      14
+```
+
+With a hard reserve the department protects the patients it already knows are
+sick, spends the whole budget re-checking bands that never move, and misses
+fourteen of fifteen deteriorations. **P014 — the patient this entire project was
+built around — is never looked at again.** With no reserve it finds almost every
+deterioration and neglects the patients it knows are sick.
+
+So the reserve now decays with lateness: acuity goes first, but nobody is
+forgotten.
+
+> Rationing observation by **current acuity** is rationing by what we already
+> know, and observation exists to find out what we do not.
+
+That is the same mistake Phase 11 refused to make when it declined to rank
+questions by confidence gained. Value lives in what might change, not in what is
+already settled.
+
+### There is no safe setting
+
+The sweep is monotone: every value trades one failure for the other. That is not
+a defect in the mechanism — it is what being three times oversubscribed actually
+costs. Our default of 10 minutes is a compromise for this roster and **is not a
+recommendation**. The system's job is to make the choice explicit, set in advance
+by a clinical governance lead and logged, rather than discovered at 2am when the
+waiting room is full.
+
+### What the surge roster is, and is not
+
+There is no arrival generator here and there never has been. Load is created by
+**replicating the authored roster**, with copies labelled as copies (`P014-b`,
+`P014-c`). That makes it a fair test of what happens when demand triples and
+useless as a statement about case mix — a real surge is not three of every
+patient.
+
+Each copy keeps its own internal timing, so a copy of P014 deteriorates at
+P014's rate rather than three times faster. Compressing a patient's physiology to
+simulate a busy department would be modelling a different disease, not a
+different workload.
+
+One assumption is doing real work in every capacity figure above: **three minutes
+per reassessment**. It is fast because the system takes part of it — sensors
+capture, the engine re-scores, the nurse confirms. A department doing this
+manually would be nearer ten minutes and would have a third of the capacity
+modelled here. We cannot validate three minutes and nobody should treat it as
+measured.
+
 ## The safety guard
 
 A weighted score is a good instrument for ranking and a bad one for absolutes.
@@ -879,6 +993,7 @@ against capacity is a nurse's decision (Phase 13) under explicit surge policy
 ```
 core/         engine — framework-free, fully testable
 simulation/   clock.py — event queue, re-triage schedule, detection latency
+              surge.py — nurse-time budget, deferral policy, load testing
 app/          view_model.py + dashboard.py — rendering only, zero logic
 data/         synthetic patients, hospital profiles, weights, thresholds
 tests/        the safety argument, expressed as code
@@ -897,7 +1012,8 @@ override policy in `data/ratchet_config.json`, log settings in
 `data/audit_config.json`, clock horizon and event caps in
 `data/simulation_config.json`, and the question bank and its ranking weights in
 `data/questions.json`, and clinician action policy in
-`data/workflow_config.json`. Nothing a judge might question is hard-coded in the
+`data/workflow_config.json`, and capacity and deferral policy in
+`data/surge_config.json`. Nothing a judge might question is hard-coded in the
 engine.
 
 Reassessment intervals and time-to-clinician targets both live in
@@ -947,4 +1063,8 @@ agreed, and the board reports need rather than allocating anything: it does not
 assign staff, reserve beds or decide who is seen next. Marking a patient seen
 records clinical contact and nothing more: it is not a measure of care quality,
 and a department optimising it could score perfectly without treating anybody.
+The surge figures come from replicating our own 24 patients, which is a load test
+and not a case mix, and they rest on an unvalidated three-minute reassessment
+cost; the deferral policy is a demonstration setting with no safe value, not a
+surge escalation protocol.
 `docs/limitations.md` sets out what real validation would require.
