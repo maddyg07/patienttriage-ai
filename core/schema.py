@@ -251,6 +251,31 @@ class PatientHistory:
 
 
 # ---------------------------------------------------------------------------
+# TIMED UPDATES  --  what happens to a patient WHILE THEY WAIT
+# ---------------------------------------------------------------------------
+
+@dataclass
+class TimedUpdate:
+    """
+    A scheduled change to a patient, fired by the simulation clock.
+
+    This is what makes triage continuous rather than a snapshot. A patient
+    arrives, gets scored, and then the world keeps moving: their SpO2 drifts
+    down, they answer a question, a family member arrives with history.
+
+    Phase 2 only LOADS these. Phase 10 wires them to the clock and re-runs the
+    pipeline each time one fires.
+    """
+
+    at_minute: int
+    note: str = ""
+    vitals: Optional["VitalSigns"] = None
+    observed: Optional["ObservedSignals"] = None
+    facial: Optional["FacialSignals"] = None
+    new_symptoms: List[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # PATIENT
 # ---------------------------------------------------------------------------
 
@@ -276,8 +301,12 @@ class Patient:
     observed: ObservedSignals = field(default_factory=ObservedSignals)
     history: PatientHistory = field(default_factory=PatientHistory)
 
+    # What happens to this patient while they wait (Phase 10 consumes this).
+    trajectory: List[TimedUpdate] = field(default_factory=list)
+
     scenario_label: str = ""
     expected_behaviour: str = ""
+    demonstrates: List[str] = field(default_factory=list)
 
     @property
     def age_band(self) -> AgeBand:

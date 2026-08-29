@@ -1,0 +1,1811 @@
+{
+  "_disclaimer": "SYNTHETIC DATA. Every patient in this file is invented for demonstration purposes. No real person, record, or hospital is represented. Vital sign values are plausible but are NOT drawn from any clinical dataset and are NOT validated.",
+  "_authored": "Hand-written, not randomly generated. Each patient exists to demonstrate one specific behaviour of the triage system, recorded in the 'demonstrates' field and asserted by the Phase 15 test suite.",
+  "patients": [
+    {
+      "patient_id": "P001",
+      "age_years": 34,
+      "sex": "male",
+      "arrival_minute": 0,
+      "scenario_label": "Stable adult, minor laceration",
+      "expected_behaviour": "Should settle at L1 WATCH with high confidence. This is the control case: if P001 ever escalates, something is wrong with the engine.",
+      "demonstrates": [
+        "baseline_normal",
+        "high_confidence"
+      ],
+      "self_report": {
+        "chief_complaint": "Cut my hand on a kitchen knife",
+        "symptoms": [
+          "laceration",
+          "localised pain"
+        ],
+        "denies": [
+          "dizziness",
+          "breathlessness"
+        ],
+        "pain_score": 3,
+        "symptom_duration_hours": 1.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 78,
+        "respiratory_rate": 14,
+        "spo2": 99,
+        "temperature_c": 36.8,
+        "systolic_bp": 124,
+        "diastolic_bp": 78,
+        "measured_at_minute": 2
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "no",
+        "baseline_known": "yes",
+        "baseline_asymmetry_present": "no",
+        "baseline_condition": "none",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "no",
+        "consciousness": "alert",
+        "visible_bleeding": "yes",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "partial",
+        "conditions": [],
+        "medications": [],
+        "previous_visits": 1,
+        "baseline_notes": "One prior visit, unrelated."
+      }
+    },
+    {
+      "patient_id": "P002",
+      "age_years": 58,
+      "sex": "male",
+      "arrival_minute": 3,
+      "scenario_label": "Critical adult, chest pain with unstable vitals",
+      "expected_behaviour": "Should reach L4 CODE on arrival, before any question is asked. This is the Round 1 'pulled at 14 seconds' moment.",
+      "demonstrates": [
+        "immediate_escalation",
+        "multi_signal_agreement"
+      ],
+      "self_report": {
+        "chief_complaint": "Crushing chest pain radiating to left arm",
+        "symptoms": [
+          "chest pain",
+          "sweating",
+          "nausea",
+          "breathlessness"
+        ],
+        "denies": [],
+        "pain_score": 9,
+        "symptom_duration_hours": 0.75,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 118,
+        "respiratory_rate": 26,
+        "spo2": 91,
+        "temperature_c": 36.9,
+        "systolic_bp": 92,
+        "diastolic_bp": 58,
+        "measured_at_minute": 4
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "yes",
+        "baseline_known": "yes",
+        "baseline_asymmetry_present": "no",
+        "baseline_condition": "none",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "yes",
+        "unable_to_speak_full_sentence": "yes"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "yes",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "yes"
+      },
+      "history": {
+        "tier": "rich",
+        "conditions": [
+          "hypertension",
+          "type 2 diabetes",
+          "previous myocardial infarction"
+        ],
+        "medications": [
+          "metformin",
+          "atorvastatin",
+          "ramipril"
+        ],
+        "previous_visits": 6,
+        "baseline_notes": "Usual SpO2 97 percent on room air. Usual systolic 130-145."
+      }
+    },
+    {
+      "patient_id": "P003",
+      "age_years": 46,
+      "sex": "female",
+      "arrival_minute": 8,
+      "scenario_label": "Ambiguous symptoms, no clear localising signal",
+      "expected_behaviour": "Should land mid-range with LOW confidence and a wide plausible band set. The point is not the score, it is that the system admits it is unsure instead of committing.",
+      "demonstrates": [
+        "ambiguous_presentation",
+        "low_confidence",
+        "wide_band_set"
+      ],
+      "self_report": {
+        "chief_complaint": "I just don't feel right",
+        "symptoms": [
+          "dizziness",
+          "mild nausea",
+          "fatigue",
+          "vague unease"
+        ],
+        "denies": [
+          "chest pain",
+          "headache"
+        ],
+        "pain_score": 2,
+        "symptom_duration_hours": 30.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 96,
+        "respiratory_rate": 18,
+        "spo2": 96,
+        "temperature_c": 37.1,
+        "systolic_bp": 108,
+        "diastolic_bp": 70,
+        "measured_at_minute": 10
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "unknown",
+        "baseline_known": "no",
+        "baseline_asymmetry_present": "unknown",
+        "baseline_condition": "unknown",
+        "change_reported_as_new": "unknown",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "unknown",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "unknown"
+      },
+      "history": {
+        "tier": "partial",
+        "conditions": [
+          "hypothyroidism"
+        ],
+        "medications": [],
+        "previous_visits": null,
+        "baseline_notes": ""
+      }
+    },
+    {
+      "patient_id": "P004",
+      "age_years": 6,
+      "sex": "female",
+      "arrival_minute": 12,
+      "scenario_label": "Pediatric, fever, otherwise well",
+      "expected_behaviour": "HR 122 is tachycardic for an adult and normal for a six-year-old. Adult-calibrated logic escalates this child wrongly. Age-aware logic does not. Pair with P002 to show the difference.",
+      "demonstrates": [
+        "age_awareness",
+        "pediatric_thresholds",
+        "false_positive_avoided"
+      ],
+      "self_report": {
+        "chief_complaint": "Fever and sore throat since yesterday",
+        "symptoms": [
+          "fever",
+          "sore throat"
+        ],
+        "denies": [
+          "breathlessness",
+          "rash"
+        ],
+        "pain_score": 3,
+        "symptom_duration_hours": 20.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 122,
+        "respiratory_rate": 24,
+        "spo2": 98,
+        "temperature_c": 38.6,
+        "systolic_bp": 100,
+        "diastolic_bp": 64,
+        "measured_at_minute": 14
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "no",
+        "baseline_known": "no",
+        "baseline_asymmetry_present": "unknown",
+        "baseline_condition": "unknown",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "no",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "partial",
+        "conditions": [],
+        "medications": [],
+        "previous_visits": 2,
+        "baseline_notes": "Immunisations up to date per parent."
+      }
+    },
+    {
+      "patient_id": "P005",
+      "age_years": 0.67,
+      "sex": "male",
+      "arrival_minute": 15,
+      "scenario_label": "Infant, fever with lethargy and poor feeding",
+      "expected_behaviour": "HR 168 IS normal-range for an eight-month-old, so heart rate alone must not drive this. The escalation should come from lethargy plus poor feeding plus infant age band, not from the number.",
+      "demonstrates": [
+        "age_awareness",
+        "infant_thresholds",
+        "escalation_from_context_not_vitals"
+      ],
+      "self_report": {
+        "chief_complaint": "Parent reports baby is floppy and not feeding",
+        "symptoms": [
+          "fever",
+          "poor feeding",
+          "lethargy",
+          "reduced wet nappies"
+        ],
+        "denies": [],
+        "pain_score": null,
+        "symptom_duration_hours": 14.0,
+        "can_communicate": "no"
+      },
+      "vitals": {
+        "heart_rate": 168,
+        "respiratory_rate": 46,
+        "spo2": 95,
+        "temperature_c": 38.4,
+        "systolic_bp": null,
+        "diastolic_bp": null,
+        "measured_at_minute": 16
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "yes",
+        "baseline_known": "no",
+        "baseline_asymmetry_present": "unknown",
+        "baseline_condition": "unknown",
+        "change_reported_as_new": "unknown",
+        "speech_abnormality": "unknown",
+        "unilateral_weakness": "unknown"
+      },
+      "voice": {
+        "capture_status": "not_attempted",
+        "slurred_speech": "unknown",
+        "breathlessness_between_words": "unknown",
+        "unable_to_speak_full_sentence": "unknown"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "unknown",
+        "consciousness": "responds_to_voice",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "yes"
+      },
+      "history": {
+        "tier": "zero",
+        "conditions": [],
+        "medications": [],
+        "previous_visits": null,
+        "baseline_notes": ""
+      }
+    },
+    {
+      "patient_id": "P006",
+      "age_years": 82,
+      "sex": "female",
+      "arrival_minute": 18,
+      "scenario_label": "Geriatric fall on anticoagulant, deceptively normal vitals",
+      "expected_behaviour": "Vitals look almost reassuring. They should not be trusted: a beta-blocker blunts the tachycardia that would normally signal blood loss, and an anticoagulant plus head strike is high risk. The engine must escalate on context, not numbers.",
+      "demonstrates": [
+        "geriatric_thresholds",
+        "medication_masking",
+        "occult_risk"
+      ],
+      "self_report": {
+        "chief_complaint": "Fell at home and hit my head on the door frame",
+        "symptoms": [
+          "head strike",
+          "hip pain",
+          "mild confusion per daughter"
+        ],
+        "denies": [
+          "loss of consciousness"
+        ],
+        "pain_score": 5,
+        "symptom_duration_hours": 2.5,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 68,
+        "respiratory_rate": 20,
+        "spo2": 94,
+        "temperature_c": 36.2,
+        "systolic_bp": 104,
+        "diastolic_bp": 62,
+        "measured_at_minute": 20
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "yes",
+        "baseline_known": "yes",
+        "baseline_asymmetry_present": "no",
+        "baseline_condition": "none",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "yes",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "rich",
+        "conditions": [
+          "atrial fibrillation",
+          "osteoporosis",
+          "hypertension"
+        ],
+        "medications": [
+          "apixaban",
+          "bisoprolol",
+          "calcium with vitamin D"
+        ],
+        "previous_visits": 9,
+        "baseline_notes": "Usual heart rate 62-72 on bisoprolol. Anticoagulated. Baseline systolic 115-130."
+      }
+    },
+    {
+      "patient_id": "P007",
+      "age_years": 29,
+      "sex": "male",
+      "arrival_minute": 22,
+      "scenario_label": "Zero-history patient, abdominal pain",
+      "expected_behaviour": "Nothing on file. Confidence must drop and the system should want a question or earlier review. Risk must NOT drop. Compare against P008, who has identical vitals and a full record.",
+      "demonstrates": [
+        "zero_history",
+        "missing_history_raises_uncertainty",
+        "missing_history_never_lowers_risk"
+      ],
+      "self_report": {
+        "chief_complaint": "Severe stomach pain since this morning",
+        "symptoms": [
+          "abdominal pain",
+          "nausea"
+        ],
+        "denies": [
+          "vomiting",
+          "fever"
+        ],
+        "pain_score": 8,
+        "symptom_duration_hours": 7.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 104,
+        "respiratory_rate": 20,
+        "spo2": 98,
+        "temperature_c": 37.4,
+        "systolic_bp": 118,
+        "diastolic_bp": 74,
+        "measured_at_minute": 24
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "yes",
+        "baseline_known": "no",
+        "baseline_asymmetry_present": "unknown",
+        "baseline_condition": "unknown",
+        "change_reported_as_new": "unknown",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "yes",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "zero",
+        "conditions": [],
+        "medications": [],
+        "previous_visits": null,
+        "baseline_notes": ""
+      }
+    },
+    {
+      "patient_id": "P008",
+      "age_years": 71,
+      "sex": "male",
+      "arrival_minute": 26,
+      "scenario_label": "Rich-history patient, breathless and below own baseline",
+      "expected_behaviour": "SpO2 89 is bad in absolute terms, but the escalation argument is stronger than that: his own record says he normally sits at 94. The engine should reason about the DELTA from a known baseline, not just the raw number.",
+      "demonstrates": [
+        "rich_history",
+        "baseline_delta_reasoning",
+        "high_confidence"
+      ],
+      "self_report": {
+        "chief_complaint": "Much more short of breath than usual for three days",
+        "symptoms": [
+          "breathlessness",
+          "ankle swelling",
+          "cough"
+        ],
+        "denies": [
+          "chest pain"
+        ],
+        "pain_score": 1,
+        "symptom_duration_hours": 72.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 102,
+        "respiratory_rate": 26,
+        "spo2": 89,
+        "temperature_c": 36.6,
+        "systolic_bp": 138,
+        "diastolic_bp": 84,
+        "measured_at_minute": 28
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "yes",
+        "baseline_known": "yes",
+        "baseline_asymmetry_present": "no",
+        "baseline_condition": "none",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "yes",
+        "unable_to_speak_full_sentence": "yes"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "yes",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "rich",
+        "conditions": [
+          "congestive heart failure",
+          "chronic kidney disease stage 3",
+          "hypertension"
+        ],
+        "medications": [
+          "furosemide",
+          "bisoprolol",
+          "spironolactone"
+        ],
+        "previous_visits": 14,
+        "baseline_notes": "Usual SpO2 94 percent on room air. Usual respiratory rate 18. Walks 100 metres before stopping."
+      }
+    },
+    {
+      "patient_id": "P009",
+      "age_years": 52,
+      "sex": "female",
+      "arrival_minute": 30,
+      "scenario_label": "Partial history, infected diabetic foot ulcer",
+      "expected_behaviour": "Some record exists but the medication list is incomplete and prior visits are unrecorded. Confidence should sit between P007 (zero) and P008 (rich), demonstrating that history quality is a spectrum, not a switch.",
+      "demonstrates": [
+        "partial_history",
+        "graded_confidence"
+      ],
+      "self_report": {
+        "chief_complaint": "Wound on my foot is hot and spreading",
+        "symptoms": [
+          "foot ulcer",
+          "fever",
+          "redness spreading up leg"
+        ],
+        "denies": [
+          "breathlessness"
+        ],
+        "pain_score": 6,
+        "symptom_duration_hours": 96.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 98,
+        "respiratory_rate": 18,
+        "spo2": 97,
+        "temperature_c": 38.2,
+        "systolic_bp": 126,
+        "diastolic_bp": 76,
+        "measured_at_minute": 32
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "yes",
+        "baseline_known": "no",
+        "baseline_asymmetry_present": "unknown",
+        "baseline_condition": "unknown",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "yes",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "partial",
+        "conditions": [
+          "type 2 diabetes"
+        ],
+        "medications": [],
+        "previous_visits": null,
+        "baseline_notes": "Diagnosis on file. Medication list not reconciled."
+      }
+    },
+    {
+      "patient_id": "P010",
+      "age_years": 44,
+      "sex": "male",
+      "arrival_minute": 34,
+      "scenario_label": "Under-reporting patient, denial conflicts with objective evidence",
+      "expected_behaviour": "He says he is fine. His SpO2, respiratory rate, pallor and inability to finish a sentence say otherwise. The engine must NOT lower risk on the denial, must flag the CONFLICT explicitly, and must raise uncertainty. His statement is recorded, not discarded.",
+      "demonstrates": [
+        "denial_does_not_cancel_evidence",
+        "conflict_detection",
+        "under_reporting"
+      ],
+      "self_report": {
+        "chief_complaint": "My wife made me come, I'm fine",
+        "symptoms": [
+          "tiredness"
+        ],
+        "denies": [
+          "chest pain",
+          "breathlessness",
+          "dizziness"
+        ],
+        "pain_score": 0,
+        "symptom_duration_hours": 5.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 108,
+        "respiratory_rate": 24,
+        "spo2": 93,
+        "temperature_c": 36.7,
+        "systolic_bp": 148,
+        "diastolic_bp": 92,
+        "measured_at_minute": 36
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "yes",
+        "baseline_known": "yes",
+        "baseline_asymmetry_present": "no",
+        "baseline_condition": "none",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "yes",
+        "unable_to_speak_full_sentence": "yes"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "no",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "yes"
+      },
+      "history": {
+        "tier": "partial",
+        "conditions": [
+          "hypertension"
+        ],
+        "medications": [
+          "amlodipine"
+        ],
+        "previous_visits": 2,
+        "baseline_notes": ""
+      }
+    },
+    {
+      "patient_id": "P011",
+      "age_years": 67,
+      "sex": "female",
+      "arrival_minute": 38,
+      "scenario_label": "FACIAL CASE A. Acute facial droop on a documented symmetric baseline",
+      "expected_behaviour": "Documented symmetric baseline, droop now, slurred speech, one-sided weakness, onset within the hour. Every arrow points the same way. Strong escalation to L4 CODE, and confidence should be HIGH because the signals agree.",
+      "demonstrates": [
+        "facial_case_A",
+        "acute_change_detected",
+        "stroke_cluster",
+        "signal_agreement"
+      ],
+      "self_report": {
+        "chief_complaint": "My face dropped and my arm went weak about 40 minutes ago",
+        "symptoms": [
+          "facial droop",
+          "slurred speech",
+          "right arm weakness"
+        ],
+        "denies": [
+          "headache",
+          "chest pain"
+        ],
+        "pain_score": 0,
+        "symptom_duration_hours": 0.67,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 88,
+        "respiratory_rate": 18,
+        "spo2": 97,
+        "temperature_c": 36.7,
+        "systolic_bp": 168,
+        "diastolic_bp": 94,
+        "measured_at_minute": 39
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "yes",
+        "droop_observed": "yes",
+        "visible_distress": "yes",
+        "baseline_known": "yes",
+        "baseline_asymmetry_present": "no",
+        "baseline_condition": "none",
+        "change_reported_as_new": "yes",
+        "speech_abnormality": "yes",
+        "unilateral_weakness": "yes"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "yes",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "yes",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "rich",
+        "conditions": [
+          "hypertension",
+          "hyperlipidaemia"
+        ],
+        "medications": [
+          "amlodipine",
+          "atorvastatin"
+        ],
+        "previous_visits": 5,
+        "baseline_notes": "Face documented symmetric at last three visits. No prior neurological deficit."
+      }
+    },
+    {
+      "patient_id": "P012",
+      "age_years": 24,
+      "sex": "male",
+      "arrival_minute": 41,
+      "scenario_label": "FACIAL CASE B. Congenital facial asymmetry, here for a sprained ankle",
+      "expected_behaviour": "The camera sees a clearly asymmetric face. It is how he has looked since birth, it is documented, and nothing neurological is present. He must NOT be escalated for his face. He is an ankle injury and should be triaged as one.",
+      "demonstrates": [
+        "facial_case_B",
+        "congenital_baseline_respected",
+        "no_false_emergency",
+        "fairness"
+      ],
+      "self_report": {
+        "chief_complaint": "Twisted my ankle playing football",
+        "symptoms": [
+          "ankle pain",
+          "swelling"
+        ],
+        "denies": [
+          "facial weakness",
+          "speech difficulty",
+          "limb weakness",
+          "headache"
+        ],
+        "pain_score": 6,
+        "symptom_duration_hours": 3.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 82,
+        "respiratory_rate": 16,
+        "spo2": 99,
+        "temperature_c": 36.6,
+        "systolic_bp": 122,
+        "diastolic_bp": 74,
+        "measured_at_minute": 43
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "yes",
+        "droop_observed": "no",
+        "visible_distress": "no",
+        "baseline_known": "yes",
+        "baseline_asymmetry_present": "yes",
+        "baseline_condition": "congenital",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "yes",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "rich",
+        "conditions": [
+          "congenital hemifacial asymmetry"
+        ],
+        "medications": [],
+        "previous_visits": 4,
+        "baseline_notes": "Congenital left hemifacial asymmetry, present since birth, stable and documented at every prior visit. Not a neurological finding."
+      }
+    },
+    {
+      "patient_id": "P013",
+      "age_years": 31,
+      "sex": "female",
+      "arrival_minute": 44,
+      "scenario_label": "FACIAL CASE C. Acid-attack survivor with extensive scarring, here for migraine",
+      "expected_behaviour": "Her face is permanently and severely altered. It is documented. She has a migraine, which is what she should be triaged for. A detector-only system flags her as an emergency every single visit. Ours must not.",
+      "demonstrates": [
+        "facial_case_C",
+        "scarring_baseline_respected",
+        "no_false_emergency",
+        "fairness",
+        "dignity"
+      ],
+      "self_report": {
+        "chief_complaint": "Severe migraine, same as my usual ones but worse",
+        "symptoms": [
+          "headache",
+          "photophobia",
+          "nausea"
+        ],
+        "denies": [
+          "facial weakness",
+          "new speech difficulty",
+          "limb weakness",
+          "sudden onset"
+        ],
+        "pain_score": 7,
+        "symptom_duration_hours": 6.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 88,
+        "respiratory_rate": 16,
+        "spo2": 98,
+        "temperature_c": 36.9,
+        "systolic_bp": 132,
+        "diastolic_bp": 80,
+        "measured_at_minute": 46
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "yes",
+        "droop_observed": "no",
+        "visible_distress": "yes",
+        "baseline_known": "yes",
+        "baseline_asymmetry_present": "yes",
+        "baseline_condition": "burn_or_acid",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "no",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "rich",
+        "conditions": [
+          "chemical burn injury with facial scarring",
+          "migraine with aura"
+        ],
+        "medications": [
+          "sumatriptan",
+          "propranolol"
+        ],
+        "previous_visits": 11,
+        "baseline_notes": "Extensive facial scarring and contracture following chemical burn injury in 2019. Appearance is permanent and stable. Documented at every visit. Not a neurological finding."
+      }
+    },
+    {
+      "patient_id": "P014",
+      "age_years": 38,
+      "sex": "female",
+      "arrival_minute": 48,
+      "scenario_label": "DETERIORATES WHILE WAITING. Arrives unremarkable, worsens over 34 minutes",
+      "expected_behaviour": "The headline demo. Arrives looking like a low-acuity patient and gets a low band. Then her heart rate climbs, then her SpO2 falls. The Ratchet escalates her twice without a human touching anything. This is 'triage is not a snapshot', made visible.",
+      "demonstrates": [
+        "deterioration_while_waiting",
+        "continuous_retriage",
+        "ratchet_escalation",
+        "trend_detection"
+      ],
+      "self_report": {
+        "chief_complaint": "Bit short of breath and my calf has been sore since the flight",
+        "symptoms": [
+          "mild breathlessness",
+          "calf tenderness"
+        ],
+        "denies": [
+          "chest pain",
+          "fever"
+        ],
+        "pain_score": 3,
+        "symptom_duration_hours": 20.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 92,
+        "respiratory_rate": 20,
+        "spo2": 97,
+        "temperature_c": 37.2,
+        "systolic_bp": 122,
+        "diastolic_bp": 78,
+        "measured_at_minute": 50
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "no",
+        "baseline_known": "no",
+        "baseline_asymmetry_present": "unknown",
+        "baseline_condition": "unknown",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "no",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "partial",
+        "conditions": [],
+        "medications": [
+          "combined oral contraceptive"
+        ],
+        "previous_visits": 1,
+        "baseline_notes": "Long-haul flight four days ago."
+      },
+      "trajectory": [
+        {
+          "at_minute": 66,
+          "note": "Routine reassessment at wait-time threshold. Heart rate climbing, respiratory rate up.",
+          "vitals": {
+            "heart_rate": 112,
+            "respiratory_rate": 24,
+            "spo2": 95,
+            "temperature_c": 37.3,
+            "systolic_bp": 118,
+            "diastolic_bp": 74,
+            "measured_at_minute": 66
+          }
+        },
+        {
+          "at_minute": 82,
+          "note": "Now visibly breathless. SpO2 dropping, pleuritic pain reported.",
+          "vitals": {
+            "heart_rate": 124,
+            "respiratory_rate": 28,
+            "spo2": 91,
+            "temperature_c": 37.4,
+            "systolic_bp": 108,
+            "diastolic_bp": 68,
+            "measured_at_minute": 82
+          },
+          "new_symptoms": [
+            "pleuritic chest pain"
+          ],
+          "observed": {
+            "capture_status": "ok",
+            "gait_abnormal": "yes",
+            "consciousness": "alert",
+            "visible_bleeding": "no",
+            "skin_pallor_or_cyanosis": "yes"
+          }
+        }
+      ]
+    },
+    {
+      "patient_id": "P015",
+      "age_years": 74,
+      "sex": "male",
+      "arrival_minute": 52,
+      "scenario_label": "FACIAL CASE D. Chronic post-stroke facial weakness, here with urinary symptoms",
+      "expected_behaviour": "He has a real facial droop. It is six years old and documented. The droop must not drive escalation. The urinary sepsis picture may well drive it instead, and that is the correct reason.",
+      "demonstrates": [
+        "facial_case_D",
+        "chronic_deficit_respected",
+        "no_false_emergency",
+        "escalation_for_the_right_reason"
+      ],
+      "self_report": {
+        "chief_complaint": "Burning when passing urine and feeling shivery",
+        "symptoms": [
+          "dysuria",
+          "rigors",
+          "confusion per wife"
+        ],
+        "denies": [
+          "new facial weakness",
+          "new limb weakness",
+          "new speech change"
+        ],
+        "pain_score": 4,
+        "symptom_duration_hours": 40.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 106,
+        "respiratory_rate": 22,
+        "spo2": 95,
+        "temperature_c": 38.7,
+        "systolic_bp": 102,
+        "diastolic_bp": 60,
+        "measured_at_minute": 54
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "yes",
+        "droop_observed": "yes",
+        "visible_distress": "yes",
+        "baseline_known": "yes",
+        "baseline_asymmetry_present": "yes",
+        "baseline_condition": "post_stroke",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "yes",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "rich",
+        "conditions": [
+          "previous ischaemic stroke 2020",
+          "residual left facial weakness",
+          "benign prostatic hyperplasia"
+        ],
+        "medications": [
+          "clopidogrel",
+          "atorvastatin",
+          "tamsulosin"
+        ],
+        "previous_visits": 8,
+        "baseline_notes": "Left facial weakness present and unchanged since 2020 stroke. Documented at every visit. Gait unchanged. This is his normal."
+      }
+    },
+    {
+      "patient_id": "P016",
+      "age_years": 55,
+      "sex": "male",
+      "arrival_minute": 56,
+      "scenario_label": "FACIAL CASE E. Facial asymmetry with NO known baseline and no clear answer",
+      "expected_behaviour": "The hardest case, and the most instructive. Asymmetry is present. No record exists. He genuinely cannot say whether it is new. The system must return UNKNOWN, raise uncertainty sharply, ask the high-value question, and recommend faster human review. It must neither confidently escalate to CODE nor confidently dismiss.",
+      "demonstrates": [
+        "facial_case_E",
+        "unknown_baseline",
+        "high_uncertainty",
+        "triggers_adaptive_question",
+        "safety_via_review_not_via_guessing"
+      ],
+      "self_report": {
+        "chief_complaint": "Feeling generally unwell for a couple of days",
+        "symptoms": [
+          "fatigue",
+          "mild headache"
+        ],
+        "denies": [],
+        "pain_score": 3,
+        "symptom_duration_hours": 48.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 90,
+        "respiratory_rate": 18,
+        "spo2": 96,
+        "temperature_c": 37.0,
+        "systolic_bp": 152,
+        "diastolic_bp": 88,
+        "measured_at_minute": 58
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "yes",
+        "droop_observed": "yes",
+        "visible_distress": "unknown",
+        "baseline_known": "unknown",
+        "baseline_asymmetry_present": "unknown",
+        "baseline_condition": "unknown",
+        "change_reported_as_new": "unknown",
+        "speech_abnormality": "unknown",
+        "unilateral_weakness": "unknown"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "unknown",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "unknown",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "zero",
+        "conditions": [],
+        "medications": [],
+        "previous_visits": null,
+        "baseline_notes": ""
+      }
+    },
+    {
+      "patient_id": "P017",
+      "age_years": 27,
+      "sex": "female",
+      "arrival_minute": 60,
+      "scenario_label": "Stable patient waiting normally, no deterioration",
+      "expected_behaviour": "The control for P014. Same waiting room, same reassessment triggers, same clock. Her vitals do not move and her band does not move. Without her, P014's escalation could be dismissed as the system simply escalating everyone over time.",
+      "demonstrates": [
+        "stable_while_waiting",
+        "no_spurious_escalation",
+        "control_case"
+      ],
+      "self_report": {
+        "chief_complaint": "Fell off my bike and my wrist hurts",
+        "symptoms": [
+          "wrist pain",
+          "swelling"
+        ],
+        "denies": [
+          "head injury",
+          "loss of consciousness",
+          "dizziness"
+        ],
+        "pain_score": 5,
+        "symptom_duration_hours": 2.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 76,
+        "respiratory_rate": 15,
+        "spo2": 99,
+        "temperature_c": 36.7,
+        "systolic_bp": 116,
+        "diastolic_bp": 72,
+        "measured_at_minute": 62
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "no",
+        "baseline_known": "yes",
+        "baseline_asymmetry_present": "no",
+        "baseline_condition": "none",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "no",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "partial",
+        "conditions": [],
+        "medications": [],
+        "previous_visits": 1,
+        "baseline_notes": ""
+      },
+      "trajectory": [
+        {
+          "at_minute": 82,
+          "note": "Wait-time reassessment. Nothing has changed.",
+          "vitals": {
+            "heart_rate": 74,
+            "respiratory_rate": 15,
+            "spo2": 99,
+            "temperature_c": 36.8,
+            "systolic_bp": 118,
+            "diastolic_bp": 72,
+            "measured_at_minute": 82
+          }
+        },
+        {
+          "at_minute": 112,
+          "note": "Second wait-time reassessment. Still stable.",
+          "vitals": {
+            "heart_rate": 78,
+            "respiratory_rate": 16,
+            "spo2": 99,
+            "temperature_c": 36.7,
+            "systolic_bp": 115,
+            "diastolic_bp": 70,
+            "measured_at_minute": 112
+          }
+        }
+      ]
+    },
+    {
+      "patient_id": "P018",
+      "age_years": 61,
+      "sex": "male",
+      "arrival_minute": 64,
+      "scenario_label": "Nurse override candidate. AI proposes L3, clinician de-escalates after examination",
+      "expected_behaviour": "Borderline vitals plus chest discomfort push him to L3. The nurse examines him, reviews an ECG, and judges L2. The AI cannot make that change itself. The override is accepted, the reason is mandatory, and both the AI recommendation and the human decision are logged side by side.",
+      "demonstrates": [
+        "nurse_override",
+        "ratchet_human_only_de_escalation",
+        "audit_trail",
+        "human_accountability"
+      ],
+      "self_report": {
+        "chief_complaint": "Tightness in my chest after climbing stairs, settled now",
+        "symptoms": [
+          "chest discomfort on exertion",
+          "mild breathlessness"
+        ],
+        "denies": [
+          "ongoing pain",
+          "sweating",
+          "nausea"
+        ],
+        "pain_score": 2,
+        "symptom_duration_hours": 4.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 94,
+        "respiratory_rate": 19,
+        "spo2": 96,
+        "temperature_c": 36.8,
+        "systolic_bp": 142,
+        "diastolic_bp": 88,
+        "measured_at_minute": 66
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "no",
+        "baseline_known": "yes",
+        "baseline_asymmetry_present": "no",
+        "baseline_condition": "none",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "no",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "rich",
+        "conditions": [
+          "hypertension",
+          "stable angina"
+        ],
+        "medications": [
+          "bisoprolol",
+          "GTN spray",
+          "aspirin"
+        ],
+        "previous_visits": 7,
+        "baseline_notes": "Known stable angina, typical exertional pattern, relieved by rest. Multiple prior identical presentations, all discharged."
+      }
+    },
+    {
+      "patient_id": "P019",
+      "age_years": 33,
+      "sex": "female",
+      "arrival_minute": 68,
+      "scenario_label": "Risk rises after one adaptive question",
+      "expected_behaviour": "Presents as an ordinary headache and scores in the L2 range. One question, chosen because it is the only one that can move the band, changes everything: the onset was sudden and it is the worst she has had. Risk jumps, band jumps. Demonstrates value-of-information properly.",
+      "demonstrates": [
+        "adaptive_question",
+        "value_of_information",
+        "band_swing",
+        "risk_change_from_answer"
+      ],
+      "self_report": {
+        "chief_complaint": "Bad headache",
+        "symptoms": [
+          "headache",
+          "neck discomfort"
+        ],
+        "denies": [
+          "fever",
+          "rash",
+          "limb weakness"
+        ],
+        "pain_score": 7,
+        "symptom_duration_hours": 5.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 94,
+        "respiratory_rate": 17,
+        "spo2": 98,
+        "temperature_c": 36.9,
+        "systolic_bp": 146,
+        "diastolic_bp": 90,
+        "measured_at_minute": 70
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "yes",
+        "baseline_known": "no",
+        "baseline_asymmetry_present": "unknown",
+        "baseline_condition": "unknown",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "no",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "partial",
+        "conditions": [],
+        "medications": [],
+        "previous_visits": 1,
+        "baseline_notes": ""
+      },
+      "trajectory": [
+        {
+          "at_minute": 74,
+          "note": "Adaptive question asked: was the onset sudden, and is this the worst headache you have ever had? Answer: yes to both.",
+          "new_symptoms": [
+            "thunderclap onset",
+            "worst headache of life"
+          ]
+        }
+      ]
+    },
+    {
+      "patient_id": "P020",
+      "age_years": 49,
+      "sex": "male",
+      "arrival_minute": 72,
+      "scenario_label": "Contradictory signals in the opposite direction to P010",
+      "expected_behaviour": "He reports 9 out of 10 pain while sitting comfortably and scrolling his phone, with entirely normal vitals. The mirror image of P010. The correct response to BOTH is the same: flag the conflict, raise uncertainty, do not dismiss the patient. A system that only distrusts patients in one direction is not reasoning, it is biased.",
+      "demonstrates": [
+        "conflict_detection",
+        "symmetric_conflict_handling",
+        "uncertainty_from_disagreement"
+      ],
+      "self_report": {
+        "chief_complaint": "Severe back pain, ten out of ten",
+        "symptoms": [
+          "lower back pain"
+        ],
+        "denies": [
+          "leg weakness",
+          "numbness",
+          "bladder problems",
+          "fever"
+        ],
+        "pain_score": 9,
+        "symptom_duration_hours": 60.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 72,
+        "respiratory_rate": 14,
+        "spo2": 99,
+        "temperature_c": 36.6,
+        "systolic_bp": 126,
+        "diastolic_bp": 78,
+        "measured_at_minute": 74
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "no",
+        "baseline_known": "yes",
+        "baseline_asymmetry_present": "no",
+        "baseline_condition": "none",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "no",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "partial",
+        "conditions": [
+          "chronic lower back pain"
+        ],
+        "medications": [
+          "ibuprofen"
+        ],
+        "previous_visits": 3,
+        "baseline_notes": ""
+      }
+    },
+    {
+      "patient_id": "P021",
+      "age_years": 19,
+      "sex": "male",
+      "arrival_minute": 76,
+      "scenario_label": "Surge-mode arrival. Asthma exacerbation during a 3x volume period",
+      "expected_behaviour": "He arrives when the queue is at triple normal length and every nurse is occupied. His band must be identical to what it would be in a quiet department. If surge changes his acuity by even one level, the system has failed its most important safety test.",
+      "demonstrates": [
+        "surge_mode",
+        "load_invariance",
+        "operational_pressure_never_lowers_acuity"
+      ],
+      "self_report": {
+        "chief_complaint": "Asthma is playing up, inhaler isn't touching it",
+        "symptoms": [
+          "wheeze",
+          "breathlessness",
+          "chest tightness"
+        ],
+        "denies": [
+          "fever",
+          "chest pain"
+        ],
+        "pain_score": 2,
+        "symptom_duration_hours": 6.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 112,
+        "respiratory_rate": 26,
+        "spo2": 93,
+        "temperature_c": 36.9,
+        "systolic_bp": 128,
+        "diastolic_bp": 76,
+        "measured_at_minute": 78
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "yes",
+        "baseline_known": "yes",
+        "baseline_asymmetry_present": "no",
+        "baseline_condition": "none",
+        "change_reported_as_new": "no",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "yes",
+        "unable_to_speak_full_sentence": "yes"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "no",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "rich",
+        "conditions": [
+          "asthma"
+        ],
+        "medications": [
+          "salbutamol inhaler",
+          "beclometasone inhaler"
+        ],
+        "previous_visits": 5,
+        "baseline_notes": "Two previous admissions for asthma. Usual SpO2 98 percent."
+      }
+    },
+    {
+      "patient_id": "P022",
+      "age_years": 40,
+      "sex": "female",
+      "arrival_minute": 80,
+      "scenario_label": "Sensor failure. Facial capture unavailable in a patient with neurological symptoms",
+      "expected_behaviour": "The camera fails on the one patient where facial data would have mattered most. The system must not crash, must not treat the absent scan as a reassuring negative, must continue scoring on vitals, symptoms, history and observation, and must raise uncertainty because a relevant modality is missing. Technology failure must not become clinical failure.",
+      "demonstrates": [
+        "fail_safe_degradation",
+        "sensor_failure",
+        "missing_modality_raises_uncertainty",
+        "no_crash"
+      ],
+      "self_report": {
+        "chief_complaint": "Headache and my left hand feels numb",
+        "symptoms": [
+          "headache",
+          "left hand numbness",
+          "clumsiness"
+        ],
+        "denies": [
+          "fever",
+          "neck stiffness"
+        ],
+        "pain_score": 5,
+        "symptom_duration_hours": 3.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 86,
+        "respiratory_rate": 17,
+        "spo2": 98,
+        "temperature_c": 36.8,
+        "systolic_bp": 158,
+        "diastolic_bp": 92,
+        "measured_at_minute": 82
+      },
+      "facial": {
+        "capture_status": "failed",
+        "asymmetry_observed": "unknown",
+        "droop_observed": "unknown",
+        "visible_distress": "unknown",
+        "baseline_known": "unknown",
+        "baseline_asymmetry_present": "unknown",
+        "baseline_condition": "unknown",
+        "change_reported_as_new": "unknown",
+        "speech_abnormality": "unknown",
+        "unilateral_weakness": "unknown"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "no",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "partial",
+        "conditions": [
+          "migraine"
+        ],
+        "medications": [],
+        "previous_visits": 2,
+        "baseline_notes": ""
+      }
+    },
+    {
+      "patient_id": "P023",
+      "age_years": 9,
+      "sex": "male",
+      "arrival_minute": 84,
+      "scenario_label": "Pediatric with incomplete vitals. Child would not tolerate the equipment",
+      "expected_behaviour": "No blood pressure, no SpO2, because a frightened nine-year-old would not keep the cuff or probe on. Data completeness drops to roughly a third. Confidence must fall and the missing fields must be named on screen. The score must NOT quietly fall because fewer abnormal values were available to find.",
+      "demonstrates": [
+        "missing_vitals",
+        "low_completeness",
+        "missing_data_never_lowers_risk",
+        "pediatric"
+      ],
+      "self_report": {
+        "chief_complaint": "Tummy pain and vomiting since last night",
+        "symptoms": [
+          "abdominal pain",
+          "vomiting",
+          "off food"
+        ],
+        "denies": [
+          "diarrhoea"
+        ],
+        "pain_score": 6,
+        "symptom_duration_hours": 16.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 118,
+        "respiratory_rate": null,
+        "spo2": null,
+        "temperature_c": 37.9,
+        "systolic_bp": null,
+        "diastolic_bp": null,
+        "measured_at_minute": 86
+      },
+      "facial": {
+        "capture_status": "refused",
+        "asymmetry_observed": "unknown",
+        "droop_observed": "unknown",
+        "visible_distress": "yes",
+        "baseline_known": "unknown",
+        "baseline_asymmetry_present": "unknown",
+        "baseline_condition": "unknown",
+        "change_reported_as_new": "unknown",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "unknown"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "unknown",
+        "consciousness": "alert",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "no"
+      },
+      "history": {
+        "tier": "partial",
+        "conditions": [],
+        "medications": [],
+        "previous_visits": 1,
+        "baseline_notes": ""
+      }
+    },
+    {
+      "patient_id": "P024",
+      "age_years": 79,
+      "sex": "female",
+      "arrival_minute": 88,
+      "scenario_label": "Geriatric, zero history, atypical presentation with no pain at all",
+      "expected_behaviour": "The hardest kind of patient to catch and the one most often under-triaged in reality. No pain, no dramatic complaint, no record, just 'off legs'. But she is hypothermic, hypoxic and tachypnoeic with a heart rate too slow for how unwell she is. Age plus atypical presentation plus zero history should escalate her, and should say plainly that confidence is low.",
+      "demonstrates": [
+        "geriatric",
+        "zero_history",
+        "atypical_presentation",
+        "silent_deterioration",
+        "escalation_despite_low_confidence"
+      ],
+      "self_report": {
+        "chief_complaint": "Neighbour brought her in, she has been off her legs since yesterday",
+        "symptoms": [
+          "generalised weakness",
+          "not eating",
+          "unsteady"
+        ],
+        "denies": [
+          "pain anywhere",
+          "breathlessness"
+        ],
+        "pain_score": 0,
+        "symptom_duration_hours": 30.0,
+        "can_communicate": "yes"
+      },
+      "vitals": {
+        "heart_rate": 58,
+        "respiratory_rate": 22,
+        "spo2": 92,
+        "temperature_c": 35.6,
+        "systolic_bp": 98,
+        "diastolic_bp": 58,
+        "measured_at_minute": 90
+      },
+      "facial": {
+        "capture_status": "ok",
+        "asymmetry_observed": "no",
+        "droop_observed": "no",
+        "visible_distress": "no",
+        "baseline_known": "no",
+        "baseline_asymmetry_present": "unknown",
+        "baseline_condition": "unknown",
+        "change_reported_as_new": "unknown",
+        "speech_abnormality": "no",
+        "unilateral_weakness": "no"
+      },
+      "voice": {
+        "capture_status": "ok",
+        "slurred_speech": "no",
+        "breathlessness_between_words": "no",
+        "unable_to_speak_full_sentence": "no"
+      },
+      "observed": {
+        "capture_status": "ok",
+        "gait_abnormal": "yes",
+        "consciousness": "responds_to_voice",
+        "visible_bleeding": "no",
+        "skin_pallor_or_cyanosis": "yes"
+      },
+      "history": {
+        "tier": "zero",
+        "conditions": [],
+        "medications": [],
+        "previous_visits": null,
+        "baseline_notes": ""
+      }
+    }
+  ]
+}
