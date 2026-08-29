@@ -36,7 +36,8 @@ WHAT THIS FILE DELIBERATELY DOES NOT DO
 ---------------------------------------
   * (Phase 4 added age-aware thresholds and age context rules; see
     core/age_rules.py.)
-  * No uncertainty or confidence -- Phase 5.
+  * (Phase 5 attached confidence and plausible bands; the arithmetic lives in
+    core/uncertainty.py and is forbidden from touching the score.)
   * No hard clinical safety rules -- Phase 7. This matters: the scorer is not
     meant to catch everything. Some patterns, such as an acute stroke cluster,
     should be floored at L4 by a RULE regardless of score, precisely because a
@@ -60,6 +61,7 @@ from core.age_rules import context_rules, thresholds_for
 from core.config import HospitalConfig
 from core.enums import AgeBand, Consciousness
 from core.schema import VITAL_FIELDS, Assessment, Contribution, Patient
+from core.uncertainty import UncertaintyEngine
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 THRESHOLDS_FILE = REPO_ROOT / "data" / "clinical_thresholds.json"
@@ -88,11 +90,15 @@ class RiskEngine:
         hospital: HospitalConfig,
         thresholds: Optional[dict] = None,
         weights: Optional[dict] = None,
+        uncertainty: Optional[UncertaintyEngine] = None,
     ):
         self.hospital = hospital
         self.thresholds = thresholds or _load(THRESHOLDS_FILE)
         self.weights = weights or _load(WEIGHTS_FILE)
         self.caps: Dict[str, float] = self.weights["domain_caps"]
+        # Phase 5. A separate stage, held here only so callers get the whole
+        # pipeline from one object. It can read the score; it cannot write it.
+        self.uncertainty = uncertainty or UncertaintyEngine()
 
     # -----------------------------------------------------------------------
     # Public entry point
@@ -129,6 +135,11 @@ class RiskEngine:
         if total > MAX_SCORE:
             assessment.safety_rules_fired.append(
                 f"score_saturated (total {total:.0f} clamped to {MAX_SCORE:.0f})")
+
+        # Phase 5. Runs AFTER the score is final and asserts it did not change
+        # it. Confidence widens the plausible band set; it never edits the
+        # score, and it never lowers a band.
+        self.uncertainty.apply(patient, assessment, self.hospital, now)
         return assessment
 
     # -----------------------------------------------------------------------

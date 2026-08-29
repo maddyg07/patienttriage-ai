@@ -1,0 +1,57 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION VALUES -- NOT CLINICAL GUIDELINES. These weights express how much each kind of missing or conflicting information should reduce our stated confidence in a prototype. They are not calibrated against outcome data and carry no clinical authority.",
+
+  "_what_confidence_means": "Confidence is a statement about the INPUT DATA, not about the patient. 40% confidence does not mean the patient is probably fine. It means we are working with a thin, stale or contradictory picture and a human should look sooner, not later. Confidence never changes the risk score.",
+
+  "_four_drivers": "Confidence starts at 1.0 and is reduced by four named, independently testable drivers. Each one reports its own quality figure and its own plain-English reasons, so the nurse sees WHY we are unsure, not just THAT we are.",
+
+  "driver_weights": {
+    "completeness": 0.35,
+    "agreement": 0.25,
+    "baseline": 0.25,
+    "staleness": 0.15
+  },
+
+  "_completeness_note": "How much of the expected picture we actually hold. Sub-weights sum to 1.0 within this driver.",
+  "completeness": {
+    "vitals_weight": 0.45,
+    "modality_weight": 0.25,
+    "history_weight": 0.20,
+    "self_report_weight": 0.10
+  },
+
+  "_baseline_note": "Do we know what NORMAL looks like for this specific patient? Multiplicative penalties: a patient with an undocumented face AND no record on file is worse off than either alone. The facial penalty is the largest single number in this file, on purpose -- it is the P016 case.",
+  "baseline": {
+    "facial_abnormal_but_baseline_unknown": 0.70,
+    "facial_capture_unavailable": 0.20,
+    "history_zero": 0.40,
+    "history_partial": 0.15
+  },
+
+  "_agreement_note": "Do the modalities tell the same story? Each modality returns concerning / reassuring / silent. Silence is not agreement, so it neither helps nor hurts here -- it is already charged to completeness.",
+  "agreement": {
+    "named_conflict_penalty": 0.25,
+    "max_named_conflict_penalty": 0.50
+  },
+
+  "_staleness_note": "A 90-minute-old SpO2 is weaker evidence than one taken two minutes ago. This driver is what makes re-triage (Phase 10) meaningful: a patient who is not re-measured LOSES confidence as they wait, which is the correct behaviour for the silent-deterioration failure mode.",
+  "staleness": {
+    "fresh_minutes": 15,
+    "stale_minutes": 90,
+    "untimestamped_quality": 0.40
+  },
+
+  "_plausible_bands_note": "The uncertainty interval is ASYMMETRIC on purpose. Missing information can conceal danger; it cannot manufacture safety. The upward span is the full 100-point range because at zero confidence we cannot honestly exclude any band, and the downward reach is a quarter of it, representing measurement noise only. At full confidence the interval collapses onto the score. This is a monotone widening rule, NOT a calibrated conformal predictor -- see the README for what we do and do not claim.",
+  "plausible_bands": {
+    "upward_span_points": 100,
+    "downward_fraction": 0.25
+  },
+
+  "confidence_floor": 0.15,
+
+  "_review_note": "Consumed by Phase 7. Low confidence is not itself an escalation; low confidence ALONGSIDE a concerning finding is.",
+  "review_thresholds": {
+    "low_confidence": 0.60,
+    "very_low_confidence": 0.40
+  }
+}

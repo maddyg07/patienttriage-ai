@@ -355,6 +355,69 @@ class Contribution:
         return f"{sign}{self.points:.0f}  {self.label}"
 
 
+# ---------------------------------------------------------------------------
+# DATA QUALITY  --  Phase 5
+# ---------------------------------------------------------------------------
+
+@dataclass
+class QualityDriver:
+    """
+    One named reason our confidence is not 100%.
+
+    Confidence is useless as a bare number. "62%" tells a nurse nothing they
+    can act on. "62%, because four vitals are missing and the face has no
+    documented baseline" tells them exactly which gap to close first, which is
+    also what makes the Phase 11 adaptive questions possible: the largest
+    penalty is the best question to ask next.
+    """
+
+    name: str
+    quality: float                                  # 0.0 - 1.0, 1.0 = perfect
+    weight: float                                   # its share of confidence
+    reasons: List[str] = field(default_factory=list)
+
+    @property
+    def penalty(self) -> float:
+        """Confidence points this driver removed."""
+        return self.weight * (1.0 - self.quality)
+
+    @property
+    def quality_pct(self) -> int:
+        return int(round(self.quality * 100))
+
+
+@dataclass
+class DataQuality:
+    """
+    The complete uncertainty picture for one assessment.
+
+    `score_low` / `score_high` bracket the risk score. The bracket is
+    ASYMMETRIC by design: it reaches much further upward than downward, because
+    information we do not have can hide danger but cannot create safety.
+    """
+
+    confidence: float = 1.0
+    drivers: List[QualityDriver] = field(default_factory=list)
+    score_low: float = 0.0
+    score_high: float = 0.0
+
+    @property
+    def confidence_pct(self) -> int:
+        return int(round(self.confidence * 100))
+
+    def dominant_driver(self) -> Optional[QualityDriver]:
+        """The single biggest reason we are unsure. Phase 11 asks about this."""
+        scored = [d for d in self.drivers if d.penalty > 0]
+        return max(scored, key=lambda d: d.penalty) if scored else None
+
+    def all_reasons(self) -> List[str]:
+        """Every named reason, worst driver first."""
+        out: List[str] = []
+        for d in sorted(self.drivers, key=lambda d: -d.penalty):
+            out.extend(d.reasons)
+        return out
+
+
 @dataclass
 class Assessment:
     """
@@ -378,6 +441,24 @@ class Assessment:
     uncertainty_drivers: List[str] = field(default_factory=list)
     data_completeness: float = 1.0
     missing_fields: List[str] = field(default_factory=list)
+    quality: Optional[DataQuality] = None                # Phase 5 detail
+
+    @property
+    def band_is_certain(self) -> bool:
+        """True when the uncertainty interval cannot reach another band."""
+        return len(self.plausible_bands) <= 1
+
+    @property
+    def worst_plausible_band(self) -> Optional[TriageBand]:
+        """
+        The most urgent band our uncertainty can reach.
+
+        This is the number the Phase 7 safety guard reasons about. The proposed
+        band answers "what do we think"; this answers "what could we be missing",
+        and in a safety-biased system the second question is the one that
+        triggers action.
+        """
+        return max(self.plausible_bands) if self.plausible_bands else self.proposed_band
 
     safety_rules_fired: List[str] = field(default_factory=list)
 

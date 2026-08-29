@@ -54,16 +54,16 @@ it never lowers risk.
 
 ## Status
 
-Built in phases. Currently at **Phase 1 — foundations and schema**.
+Built in phases. Currently at **Phase 5 — data quality and uncertainty**.
 
 | Phase | | Status |
 |---|---|---|
 | 1 | Foundations & schema | done |
 | 2 | Synthetic patients (24 authored scenarios) | done |
-| 3 | Risk engine | next |
-| 4 | Age-aware layer | |
-| 5 | Data quality & uncertainty | |
-| 6 | Facial signal module | |
+| 3 | Risk engine | done |
+| 4 | Age-aware layer | done |
+| 5 | Data quality & uncertainty | done |
+| 6 | Facial signal module | next |
 | 7 | Safety guard | |
 | 8 | Ratchet engine | |
 | 9 | Audit log | |
@@ -78,7 +78,7 @@ Built in phases. Currently at **Phase 1 — foundations and schema**.
 
 ## Running it
 
-Requires Python 3.10 or newer. Phase 1 has no third-party dependencies.
+Requires Python 3.10 or newer. There are still no third-party dependencies.
 
 ```bash
 git clone <this-repo>
@@ -98,13 +98,74 @@ python -m scripts.show_patients --coverage   # which Round 2 requirement each pa
 Five patients present with an abnormal-looking face. Only one is an acute
 change. That distinction is the point of the project.
 
+### Score them
+
+```bash
+python -m scripts.run_triage                 # the ranked queue
+python -m scripts.run_triage P016            # one patient: score panel + confidence panel
+python -m scripts.run_triage --facial        # the five facial patients side by side
+python -m scripts.run_triage --age           # what age-awareness changed, in both directions
+python -m scripts.run_triage --confidence    # who we understand least
+python -m scripts.run_triage --stale P002    # confidence decaying while a patient waits
+python -m scripts.run_triage --hospital small_ed
+```
+
+## How the score is built
+
+The score is not computed and then explained. The score is computed **by**
+building the explanation — every scorer appends a labelled contribution, and
+the total is exactly their sum:
+
+```
++20  anticoagulated (apixaban) and struck head            [neurological]
++16  reports: confusion                                   [neurological]
++10  heart rate 68 may be blunted by bisoprolol           [circulatory]
+ +9  systolic_bp 104 (low, mild)                          [circulatory]
+ +8  reports: head strike                                 [general]
+────
+ 70  →  L3 PULL
+```
+
+There is no post-hoc attribution layer, so the explanation cannot drift from
+what actually happened. Correlated findings are grouped into clinical
+**domains** and each domain is capped, because a breathless patient tripping
+six respiratory signals has one clinical problem, not six.
+
+## Confidence, and what it does not mean
+
+Every assessment carries a confidence figure built from four named, separately
+testable drivers: **completeness**, **agreement** between modalities,
+**baseline knowledge**, and **staleness**.
+
+Confidence is a statement about *our information*, not about the patient.
+
+> 40% confidence does not mean "probably fine". It means we are reasoning from
+> a thin, stale or contradictory picture, and a human should look sooner.
+
+Two rules are enforced structurally rather than promised:
+
+- The uncertainty engine reads `risk_score` and **cannot write it**. Low
+  confidence never moves anyone down the queue.
+- The uncertainty interval is **asymmetric** — it reaches four times further up
+  than down, because information we do not have can conceal danger but cannot
+  manufacture safety.
+
+**On the "Conformal Risk Guard" from Round 1.** Conformal prediction gives a
+set with a coverage guarantee, and that guarantee comes from calibration
+against real labelled outcomes. We have synthetic patients and no outcomes, so
+we do not claim coverage and we do not use the name. What `core/uncertainty.py`
+implements is a monotone widening rule: worse input data produces a wider
+plausible set, always in the safe direction. The band-set *interface* is
+deliberately conformal-shaped, so a calibrated predictor can replace it later
+without changing a single consumer.
+
 ## Layout
 
 ```
 core/         engine — framework-free, fully testable
 simulation/   clock, arrivals, deterioration, surge
 app/          Streamlit UI — rendering only, zero logic
-data/         synthetic patients and hospital profiles
+data/         synthetic patients, hospital profiles, weights, thresholds
 tests/        the safety argument, expressed as code
 docs/         architecture · safety · assumptions · privacy · limitations
 ```
@@ -112,9 +173,29 @@ docs/         architecture · safety · assumptions · privacy · limitations
 `core/` deliberately imports nothing from `app/`. The engine can be tested,
 reasoned about and eventually served over an API without touching the UI.
 
+Every tunable number lives in `data/` behind a visible disclaimer — band
+cutoffs in `data/hospitals/`, point values in `data/risk_weights.json`,
+vital-sign ranges in `data/clinical_thresholds.json`, and confidence weights in
+`data/uncertainty_config.json`. Nothing a judge might question is hard-coded in
+the engine.
+
+## Known gaps, left visible on purpose
+
+- **P011**, an acute stroke, scores L3 rather than L4. The domain cap that
+  prevents double-counting also prevents a real emergency from reaching CODE on
+  score alone. The fix is not to inflate weights until it happens to work; it is
+  a hard clinical rule in Phase 7 that floors a stroke cluster at L4 regardless
+  of score. The scoring model is not meant to be the final authority.
+- **P016**, facial asymmetry with no baseline anywhere, is now labelled
+  honestly — 18% baseline knowledge, plausible bands WATCH/LOOK — but nothing
+  yet *acts* on it. Phase 7 turns low confidence plus a concerning finding into
+  escalation.
+
 ## What this prototype does not claim
 
 It does not claim a miss rate. It does not claim clinical accuracy. It has not
 been validated against real patients or real outcomes, and any performance
 figure it prints is a property of our own synthetic data generator, nothing
-more. `docs/limitations.md` sets out what real validation would require.
+more. The confidence percentage is a claim about the quality of our input data
+and is not a probability of any clinical outcome. `docs/limitations.md` sets
+out what real validation would require.

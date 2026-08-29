@@ -1,14 +1,18 @@
 """
 scripts/run_triage.py
 =====================
-Phase 3 verification. Scores all 24 synthetic patients and prints a ranked
-queue plus explanation panels.
+Phase 5 verification. Scores all 24 synthetic patients, attaches confidence and
+a plausible band set to each, and prints the ranked queue plus explanation and
+uncertainty panels.
 
 Run from the repository root:
-    python -m scripts.run_triage               # ranked queue
-    python -m scripts.run_triage P002          # one patient, full explanation
-    python -m scripts.run_triage --facial      # the five facial patients side by side
-    python -m scripts.run_triage --age-problem # what Phase 4 has to fix
+    python -m scripts.run_triage                # ranked queue
+    python -m scripts.run_triage P016           # one patient, full explanation
+    python -m scripts.run_triage --facial       # the five facial patients
+    python -m scripts.run_triage --age          # what Phase 4 changed
+    python -m scripts.run_triage --age-problem  # what Phase 4 existed to fix
+    python -m scripts.run_triage --confidence   # the uncertainty board
+    python -m scripts.run_triage --stale P002   # confidence decaying while waiting
     python -m scripts.run_triage --hospital small_ed
 """
 
@@ -17,6 +21,7 @@ import sys
 from core.config import HospitalConfig
 from core.patient_loader import load_patient, load_patients, patients_demonstrating
 from core.risk_engine import RiskEngine, explain
+from core.uncertainty import explain_confidence
 
 
 def rule(title):
@@ -34,16 +39,21 @@ def show_queue(engine, patients):
     scored = [(p, engine.assess(p)) for p in patients]
     scored.sort(key=lambda pair: -pair[1].risk_score)
 
-    print(f"  {'rank':<6}{'ID':<7}{'age':>4}  {'band':<11}{'risk':>5}   top driver")
-    print("  " + "-" * 72)
+    print(f"  {'rank':<6}{'ID':<7}{'age':>4}  {'band':<11}{'risk':>5}"
+          f"{'conf':>6}  {'could be':<12}top driver")
+    print("  " + "-" * 74)
     for i, (p, a) in enumerate(scored, 1):
         drivers = [c for c in a.contributions if c.points > 0]
         top = drivers[0].label if drivers else "nothing abnormal detected"
-        if len(top) > 38:
-            top = top[:35] + "..."
+        if len(top) > 24:
+            top = top[:21] + "..."
         marker = " *" if a.proposed_band.value >= 3 else "  "
+        # "could be" is the most urgent band our uncertainty cannot rule out.
+        worst = a.worst_plausible_band
+        could = "" if worst == a.proposed_band else f"up to {worst.word}"
         print(f" {marker}{i:<4}{p.patient_id:<7}{int(p.age_years):>4}  "
-              f"{str(a.proposed_band):<11}{a.risk_score:>5.0f}   {top}")
+              f"{str(a.proposed_band):<11}{a.risk_score:>5.0f}"
+              f"{a.confidence_pct:>5}%  {could:<12}{top}")
 
     print()
     counts = {}
@@ -52,6 +62,10 @@ def show_queue(engine, patients):
     summary = "  ".join(
         f"{b.word} {counts.get(b, 0)}" for b in sorted(counts, reverse=True))
     print(f"  band distribution: {summary}")
+
+    widened = [a for _, a in scored if not a.band_is_certain]
+    print(f"  {len(widened)} of {len(scored)} patients carry a band we cannot "
+          f"pin down on the data we hold")
     return scored
 
 
@@ -63,6 +77,8 @@ def show_patient(engine, patient):
     print(f"  complaint: {patient.self_report.chief_complaint}")
     print("\n  WHY THIS SCORE")
     print(explain(a))
+    print("\n  HOW MUCH WE TRUST IT")
+    print(explain_confidence(a))
     print("\n  EXPECTED BEHAVIOUR (authored in Phase 2)")
     for line in _wrap(patient.expected_behaviour, 70):
         print(f"    {line}")
@@ -71,23 +87,88 @@ def show_patient(engine, patient):
 def show_facial_comparison(engine):
     rule("THE FIVE FACIAL PATIENTS, SCORED SIDE BY SIDE")
     ids = ["P011", "P012", "P013", "P015", "P016"]
-    print(f"  {'ID':<6}{'baseline':<16}{'acute?':<10}{'facial pts':>11}"
-          f"{'total':>7}  band")
-    print("  " + "-" * 72)
+    print(f"  {'ID':<6}{'baseline':<16}{'acute?':<10}{'facial':>7}"
+          f"{'total':>7}{'conf':>7}  bands")
+    print("  " + "-" * 74)
     for pid in ids:
         p = load_patient(pid)
         a = engine.assess(p)
         facial_pts = sum(c.points for c in a.contributions if c.source == "facial")
+        bands = "/".join(b.word for b in a.plausible_bands)
         print(f"  {p.patient_id:<6}{str(p.facial.baseline_condition):<16}"
-              f"{str(p.facial.acute_change()):<10}{facial_pts:>11.0f}"
-              f"{a.risk_score:>7.0f}  {a.proposed_band}")
+              f"{str(p.facial.acute_change()):<10}{facial_pts:>7.0f}"
+              f"{a.risk_score:>7.0f}{a.confidence_pct:>6}%  {bands}")
 
     print()
-    print("  All five have an abnormal-looking face. Only P011 earns facial points.")
-    print("  P012, P013 and P015 score ZERO from the face because their")
-    print("  asymmetry is chronic and documented. P016 scores zero because we")
-    print("  cannot tell -- which Phase 5 turns into low confidence, not into")
-    print("  false reassurance.")
+    print("  All five have an abnormal-looking face. Only P011 earns facial")
+    print("  points. P012, P013 and P015 score ZERO from the face because their")
+    print("  asymmetry is chronic and documented -- and they keep HIGH")
+    print("  confidence, because a documented baseline is knowledge, not a gap.")
+    print()
+    print("  P016 also scores zero, for a completely different reason: we cannot")
+    print("  tell. Phase 5 is where those two zeroes stop looking the same. Her")
+    print("  score is still 4. Her baseline knowledge is 18%, and her plausible")
+    print("  band set now reaches LOOK. Same score, honest label.")
+
+
+def show_confidence_board(engine, patients):
+    rule("THE UNCERTAINTY BOARD  --  who do we understand least?")
+    scored = [(p, engine.assess(p)) for p in patients]
+    scored.sort(key=lambda pair: pair[1].confidence)
+
+    print(f"  {'ID':<7}{'band':<11}{'risk':>5}{'conf':>6}   "
+          f"{'biggest gap':<17}what is missing")
+    print("  " + "-" * 74)
+    for p, a in scored[:10]:
+        d = a.quality.dominant_driver()
+        gap = f"{d.name} {d.quality_pct}%" if d else "-"
+        reason = d.reasons[0] if d and d.reasons else ""
+        if len(reason) > 32:
+            reason = reason[:29] + "..."
+        print(f"  {p.patient_id:<7}{str(a.proposed_band):<11}{a.risk_score:>5.0f}"
+              f"{a.confidence_pct:>5}%   {gap:<17}{reason}")
+
+    print()
+    print("  This board answers a question a triage queue alone cannot ask: not")
+    print("  'who is sickest' but 'who are we most likely to be wrong about'.")
+    print("  Those are different lists, and the second one is where misses come")
+    print("  from.")
+    print()
+    print("  Note what confidence is NOT doing here. Nobody's score moved.")
+    print("  Nobody was de-prioritised for being poorly documented. All that low")
+    print("  confidence buys you is a wider band set and a named question to go")
+    print("  and answer.")
+
+
+def show_staleness(engine, patient):
+    rule(f"CONFIDENCE WHILE WAITING  --  {patient.patient_id}")
+    print("  Same patient, same vitals, nobody back to re-measure them.")
+    print("  The silent-deterioration failure mode, made visible.\n")
+    print(f"  {'minutes waited':>15}{'vitals age':>12}{'risk':>7}{'conf':>7}"
+          f"   plausible bands")
+    print("  " + "-" * 68)
+    measured = patient.vitals.measured_at_minute
+    if measured is None:
+        measured = patient.arrival_minute
+    for waited in (0, 15, 30, 45, 60, 90, 120):
+        now = patient.arrival_minute + waited
+        a = engine.assess(patient, now_minute=now)
+        bands = ", ".join(b.word for b in a.plausible_bands)
+        print(f"  {waited:>15}{max(0, now - measured):>12}{a.risk_score:>7.0f}"
+              f"{a.confidence_pct:>6}%   {bands}")
+
+    print()
+    print("  The risk score is constant, and it should be: nothing about the")
+    print("  patient changed. What changed is how much that number is worth.")
+    print("  A system that keeps displaying an hour-old observation at full")
+    print("  strength is not monitoring anyone. Phase 10 turns this decay into")
+    print("  an actual re-assessment prompt.")
+    print()
+    print("  The decay flattens at 90 minutes because staleness can only ever")
+    print("  cost 15 of the 100 confidence points. That is deliberate. Old data")
+    print("  is weaker data, not absent data, and a patient whose record is")
+    print("  otherwise complete should not fall to 20% confidence just for")
+    print("  having waited.")
 
 
 def build_phase3_engine(profile="medium_ed"):
@@ -191,15 +272,25 @@ def main():
     if args and args[0] == "--age":
         show_age_comparison(engine)
         return
+    if args and args[0] == "--confidence":
+        show_confidence_board(engine, load_patients())
+        return
+    if args and args[0] == "--stale":
+        pid = args[1] if len(args) > 1 else "P002"
+        show_staleness(engine, load_patient(pid))
+        return
 
     patients = load_patients()
     show_queue(engine, patients)
     show_facial_comparison(engine)
-    show_age_comparison(engine)
+    show_confidence_board(engine, patients)
+    show_staleness(engine, load_patient("P002"))
 
-    rule("PHASE 4 RESULT, AND TWO THINGS STILL WRONG")
-    print("  Every patient now has a score, a proposed band, and a full")
-    print("  contribution trace. Two known gaps, both left visible on purpose:")
+    rule("PHASE 5 RESULT, AND TWO THINGS STILL WRONG")
+    print("  Every patient now has a score, a proposed band, a full contribution")
+    print("  trace, a confidence figure, a named reason for that confidence, and")
+    print("  a set of bands we cannot rule out. Two known gaps remain, both left")
+    print("  visible on purpose:")
     print()
     print("  1. P011, the acute stroke, lands at L3 rather than L4. The")
     print("     neurological domain cap that stops correlated signals from")
@@ -207,17 +298,19 @@ def main():
     print("     CODE on score alone. The fix is NOT to inflate the weights")
     print("     until it happens to work. It is a hard clinical rule in")
     print("     Phase 7 that floors an acute stroke cluster at L4 regardless")
-    print("     of score. That is the architecture working as designed: the")
-    print("     scoring model is not the final authority.")
+    print("     of score. The scoring model is not the final authority.")
     print()
-    print("  2. P016, the unknown-baseline facial patient, sits last at 4/100.")
-    print("     Correct scoring, wrong outcome. Phase 5 turns 'we cannot")
-    print("     tell' into visible low confidence, and Phase 7 turns low")
-    print("     confidence plus a concerning finding into escalation.")
+    print("  2. P016 is no longer mislabelled, but she is not yet handled.")
+    print("     Phase 5 says out loud that her band could be LOOK and that we")
+    print("     hold 18% of what we need to know about her face. Nothing ACTS")
+    print("     on that yet. Phase 7 turns low confidence plus a concerning")
+    print("     finding into escalation; Phase 11 turns 'baseline' into the one")
+    print("     question worth asking her.")
     print()
-    print("  Still missing: confidence (5), safety rules")
-    print("  (7), the ratchet (8). The band above is a PROPOSAL, not a")
-    print("  decision. ALL VALUES ARE SIMULATED and clinically unvalidated.\n")
+    print("  Still missing: safety rules (7), the ratchet (8). The band above is")
+    print("  a PROPOSAL, not a decision. ALL VALUES ARE SIMULATED and clinically")
+    print("  unvalidated. Confidence is a claim about the quality of our data,")
+    print("  never a probability of any clinical outcome.\n")
 
 
 if __name__ == "__main__":
