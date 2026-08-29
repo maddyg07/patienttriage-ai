@@ -1,0 +1,31 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION SETTINGS -- NOT A CLINICAL RECORDS POLICY. A real deployment's retention, access control and disclosure rules are governance decisions, not ours.",
+
+  "_what_the_log_is_for": "Two different readers, and the design has to serve both. A nurse asking 'why is this patient at CODE and who put them there' needs the decision trail for one patient. A governance team asking 'has this system ever lowered a band without a human' needs to run one query across every entry ever written, including entries written by a version of the code they are not reading. The second reader is why the log is a file with a verifiable structure rather than an object with methods.",
+
+  "_append_only": "There is no update method and no delete method in core/audit.py. Not a disabled one, not a private one -- the operations do not exist. A log that can be corrected is a log that can be quietly corrected, and the whole value of the artefact is that it records what happened rather than what someone later wished had happened.",
+
+  "log": {
+    "path": "logs/audit.jsonl",
+    "format": "jsonl",
+    "_format_note": "One JSON object per line. Chosen because it is append-only at the filesystem level, survives a crash mid-write with at most one bad line, and can be read by anyone with a text editor and no knowledge of this codebase. An audit trail nobody outside the team can open is not an audit trail."
+  },
+
+  "_hash_chain_note": "Each entry carries the hash of the entry before it. Editing any historical line, or removing one, breaks every hash after it and verify() reports the first sequence number where the chain fails. This makes the log tamper-EVIDENT, which is a much weaker and much more honest claim than tamper-proof: anyone who can write the file can rewrite the whole chain. Real tamper resistance needs the digest anchored somewhere the writer does not control, and that is a deployment decision we are not in a position to make.",
+  "integrity": {
+    "hash_chain": true,
+    "algorithm": "sha256",
+    "genesis_hash": "0"
+  },
+
+  "_events_note": "Rejected overrides are logged as first-class events. A system that records only successful actions hides exactly the pattern worth seeing -- three refused de-escalation attempts before an accepted one is clinically meaningful, and it is invisible in a log of outcomes.",
+  "events": {
+    "band_transition": true,
+    "override_accepted": true,
+    "override_rejected": true,
+    "assessment": false,
+    "_assessment_note": "Off by default. Logging every assessment of every waiting patient every few minutes produces a file where the decisions that matter are buried in routine re-scores. Phase 10 re-triages continuously; turning this on would mean thousands of entries per shift. A department that wants full observability can enable it, knowing the cost."
+  },
+
+  "_privacy_note": "The log records patient IDs, not names, and clinical reasoning only where a human chose to type it. It is still sensitive: an acuity history is health information. Access control, retention limits and the lawful basis for holding this are addressed in Phase 16, and nothing here should be taken as having settled them."
+}

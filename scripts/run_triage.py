@@ -1,9 +1,9 @@
 """
 scripts/run_triage.py
 =====================
-Phase 8 verification. Scores all 24 synthetic patients, attaches confidence and
-a plausible band set to each, and prints the ranked queue plus explanation and
-uncertainty panels.
+Phase 10 verification. Scores all 24 synthetic patients, attaches confidence and
+a plausible band set to each, prints the ranked queue plus explanation and
+uncertainty panels, and runs the whole roster through a simulated shift.
 
 Run from the repository root:
     python -m scripts.run_triage                # ranked queue
@@ -18,6 +18,10 @@ Run from the repository root:
     python -m scripts.run_triage --rules        # every safety rule firing on the board
     python -m scripts.run_triage --ratchet      # the one-way acuity mechanism
     python -m scripts.run_triage --override     # what a nurse de-escalation requires
+    python -m scripts.run_triage --audit        # the append-only log, and tampering with it
+    python -m scripts.run_triage --clock        # a whole simulated shift
+    python -m scripts.run_triage --latency      # how long deterioration goes unseen
+    python -m scripts.run_triage --timeline P014  # one patient through the clock
     python -m scripts.run_triage --stale P002   # confidence decaying while waiting
     python -m scripts.run_triage --hospital small_ed
 """
@@ -25,13 +29,14 @@ Run from the repository root:
 import sys
 
 from core.config import HospitalConfig
-from core.enums import TriageBand
+from core.enums import Tri, TriageBand
 from core.patient_loader import load_patient, load_patients, patients_demonstrating
 from core.facial import (
     explain_facial,
     fairness_counterfactual,
     resolve_baseline,
 )
+from core.audit import AuditLog, render_entry
 from core.ratchet import (
     OverrideRejected,
     Ratchet,
@@ -40,6 +45,12 @@ from core.ratchet import (
 from core.risk_engine import RiskEngine, explain
 from core.safety_rules import explain_rules
 from core.uncertainty import explain_confidence
+from simulation.clock import (
+    REASSESSMENT,
+    SimulationClock,
+    apply_update as clock_apply_update,
+    render_record,
+)
 
 
 def rule(title):
@@ -115,19 +126,36 @@ def _apply_update(patient, update):
     """
     Fold one trajectory step into a patient.
 
-    A stand-in for Phase 10, which owns the clock properly. Kept here so the
-    ratchet can be demonstrated on the patients who were authored for it.
+    Phases 8 and 9 had a hand-rolled copy of this here, labelled as a stand-in
+    for the clock. Phase 10 deleted it: this now delegates to the real one, so
+    there is one implementation of "what does this patient look like after that
+    happened" and the ratchet demo below exercises the same code the simulation
+    does.
+
+    The old copy had a latent bug it is worth knowing about -- it folded every
+    update onto the ARRIVAL state rather than the running one, so a symptom
+    added by one update was dropped by the next. Our authored updates all carry
+    a full set of vitals, so it never showed.
+    """
+    return clock_apply_update(patient, update)
+
+
+def _recovered(state, minute=100):
+    """
+    P014 after oxygen: the engine sees better numbers and will propose a lower
+    band. Constructed, because no patient in the roster improves -- a real gap
+    in the synthetic data, flagged rather than papered over.
     """
     import copy
 
-    p = copy.deepcopy(patient)
-    if update.vitals:
-        p.vitals = update.vitals
-    if update.observed:
-        p.observed = update.observed
-    if update.facial:
-        p.facial = update.facial
-    p.self_report.symptoms = list(p.self_report.symptoms) + list(update.new_symptoms)
+    p = copy.deepcopy(state)
+    p.vitals.spo2 = 97
+    p.vitals.respiratory_rate = 18
+    p.vitals.heart_rate = 88
+    p.vitals.measured_at_minute = minute
+    p.observed.skin_pallor_or_cyanosis = Tri.NO
+    p.self_report.symptoms = [
+        sx for sx in p.self_report.symptoms if "chest pain" not in sx.lower()]
     return p
 
 
@@ -156,15 +184,7 @@ def show_ratchet(engine):
     print("  improves. The engine sees better numbers and proposes a lower")
     print("  band. Watch what the FINAL column does.\n")
 
-    import copy
-
-    recovered = copy.deepcopy(states[-1][1])
-    recovered.vitals.spo2 = 97
-    recovered.vitals.respiratory_rate = 18
-    recovered.vitals.heart_rate = 88
-    recovered.vitals.measured_at_minute = 100
-    recovered.observed.skin_pallor_or_cyanosis = recovered.observed.skin_pallor_or_cyanosis.__class__("no")
-    a = ratchet.record(engine.assess(recovered, now_minute=100))
+    a = ratchet.record(engine.assess(_recovered(states[-1][1]), now_minute=100))
     author = "ratchet_held" if a.band_was_held else str(a.changed_by)
     print(f"  {100:>5}  {a.proposed_band.word:<10}{a.band.word:<10}"
           f"{author:<16}{a.change_reason[:30]}")
@@ -240,6 +260,287 @@ def show_override(engine):
     print("  Note the rejected list. A free-text box that accepts 'fine' has")
     print("  documented nothing while looking like accountability, which is")
     print("  worse than documenting nothing at all.")
+
+
+def show_audit(engine):
+    import json
+    from pathlib import Path
+
+    rule("THE AUDIT LOG  --  what survives the shift")
+    path = Path("/tmp/patienttriage_demo_audit.jsonl")
+    path.unlink(missing_ok=True)
+    log = AuditLog(path=path)
+    ratchet = Ratchet(audit=log)
+
+    # A short but complete story: a deterioration, a hold, refused overrides,
+    # then an accepted one.
+    p = load_patient("P014")
+    states = [(p.arrival_minute, p)] + [
+        (u.at_minute, _apply_update(p, u)) for u in p.trajectory]
+    for minute, state in states:
+        ratchet.record(engine.assess(state, now_minute=minute))
+    a = ratchet.record(engine.assess(_recovered(states[-1][1]), now_minute=100))
+
+    for bad_reason in ["ok", "better now"]:
+        try:
+            ratchet.nurse_override(a, TriageBand.L2_LOOK, bad_reason, "RN-4471")
+        except OverrideRejected:
+            pass
+    ratchet.nurse_override(
+        a, TriageBand.L2_LOOK,
+        "Reviewed after oxygen, sats maintained on air for 20 minutes",
+        "RN-4471")
+
+    print("  One patient's complete decision trail, read back from the file:\n")
+    for entry in log.for_patient("P014"):
+        print(render_entry(entry))
+
+    print()
+    print("  Note entries 5 and 6. Two refused de-escalations are on the")
+    print("  record alongside the accepted one. A log of outcomes would show a")
+    print("  single clean override and hide the fact that it took three")
+    print("  attempts -- which is a signal about the interface, or about a")
+    print("  clinician under pressure, and it is worth having.")
+
+    print("\n  INTEGRITY")
+    ok, problems = log.verify()
+    print(f"    chain verifies: {ok}")
+
+    lines = path.read_text().splitlines()
+    edited = json.loads(lines[-1])
+    edited["payload"]["reason"] = "Patient fine"
+    Path("/tmp/pt_tamper_edit.jsonl").write_text(
+        "\n".join(lines[:-1] + [json.dumps(edited, sort_keys=True)]) + "\n")
+    Path("/tmp/pt_tamper_delete.jsonl").write_text(
+        "\n".join(lines[:4] + lines[5:]) + "\n")
+
+    for label, tampered in [
+            ("someone edits a reason after the fact",
+             "/tmp/pt_tamper_edit.jsonl"),
+            ("someone deletes an inconvenient line",
+             "/tmp/pt_tamper_delete.jsonl")]:
+        ok, problems = AuditLog(path=Path(tampered)).verify()
+        print(f"\n    {label}")
+        print(f"      verifies: {ok}")
+        for problem in problems[:2]:
+            print(f"      {problem}")
+
+    print()
+    print("  Be precise about what that does and does not prove. Hash chaining")
+    print("  makes the log tamper-EVIDENT, not tamper-proof. Anyone who can")
+    print("  write this file can recompute the whole chain and produce a valid")
+    print("  log saying whatever they like. It catches casual alteration, a")
+    print("  quietly corrected reason, a crash mid-write. Real tamper")
+    print("  resistance needs the digest anchored somewhere the writer does")
+    print("  not control, and that is a deployment decision we are not in a")
+    print("  position to make. Claiming otherwise is the kind of thing a")
+    print("  security reviewer finds in a minute.")
+
+    print("\n  THE QUERY THAT MATTERS")
+    violations = log.ratchet_violations()
+    print(f"    bands lowered with no nurse behind them: {len(violations)}")
+    print()
+    print("  Phase 8 could only answer that about objects in memory, which")
+    print("  means it could only answer it for people willing to trust our")
+    print("  running code. This is the same question asked of a text file, by")
+    print("  someone who has never seen this repository.")
+
+    print("\n  COMPLETENESS")
+    replayed = log.replay_bands()
+    live = {pid: band.word for pid, band in ratchet.current.items()}
+    print(f"    replayed from the log : {replayed}")
+    print(f"    live in memory        : {live}")
+    print(f"    identical             : {replayed == live}")
+    print()
+    print("  That match is the completeness test. If the log can reconstruct")
+    print("  the system's state, nothing determining a patient's acuity lives")
+    print("  only in memory -- which is what separates a record from a diary")
+    print("  of selected highlights.")
+
+
+def _run_clock(engine, until=None):
+    clock = SimulationClock(engine, load_patients())
+    return clock, clock.run(until_minute=until)
+
+
+def show_clock(engine):
+    rule("THE SIMULATION CLOCK  --  a shift, not a snapshot")
+    clock, timeline = _run_clock(engine)
+
+    print("  24 patients arrive over 88 minutes and are re-assessed on their")
+    print("  band's schedule until the horizon. Every row below is a real trip")
+    print("  through the whole pipeline: score, confidence, safety rules,")
+    print("  ratchet, audit.\n")
+    print(f"  {'':3}{'t':>4}  {'ID':<6}{'why':<9}{'band':<17}{'risk':>4}"
+          f"{'conf':>6}  what changed")
+    print("  " + "-" * 74)
+
+    interesting = [r for r in timeline.records
+                   if r.escalated or r.previous_band is None]
+    for record in interesting:
+        print(render_record(record))
+
+    print()
+    print(f"  {len(timeline.records)} assessments, {len(interesting)} shown. The rest")
+    print("  are re-scores that changed nothing, which is the correct and")
+    print("  overwhelmingly common outcome.")
+
+    print("\n  WHO MOVED")
+    first, last = {}, {}
+    for r in timeline.records:
+        first.setdefault(r.patient_id, r)
+        last[r.patient_id] = r
+    moved = [pid for pid in last if first[pid].final_band != last[pid].final_band]
+    for pid in sorted(moved):
+        f, l = first[pid], last[pid]
+        print(f"    {pid}  {f.final_band.word} -> {l.final_band.word}"
+              f"   risk {f.risk_score:.0f} -> {l.risk_score:.0f}")
+    print(f"    {len(last) - len(moved)} of {len(last)} patients did not move at all.")
+
+    control = len(timeline.for_patient("P017"))
+    print()
+    print("  That second number is the one to give a judge. P017 is in this")
+    print("  roster as a control: same waiting room, same clock, same")
+    print(f"  reassessment triggers, no deterioration. She is re-scored "
+          f"{control} times")
+    print("  and stays exactly where she is. Without her, P014's escalation")
+    print("  could be dismissed as a system that simply escalates everyone who")
+    print("  waits long enough.")
+
+    print("\n  ESCALATIONS NOBODY ASKED FOR")
+    unprompted = timeline.unprompted_escalations()
+    for record in unprompted:
+        print(f"    {record.patient_id} at t={record.at_minute}: "
+              f"{record.previous_band.word} -> {record.final_band.word}, "
+              f"found {record.detection_latency} min after the change")
+    print()
+    print(f"  {len(unprompted)} of {len(timeline.escalations())} escalations happened at a")
+    print("  reassessment rather than in response to being told something. That")
+    print("  distinction is the phase. A system that only reacts when handed new")
+    print("  data is a scoring function with good manners; going and looking on")
+    print("  its own schedule is the part that catches a waiting room.")
+
+    print("\n  WAITING, BY ITSELF")
+    stale = sorted(last.values(), key=lambda r: r.confidence)[:4]
+    for r in stale:
+        f = first[r.patient_id]
+        print(f"    {r.patient_id}  risk {f.risk_score:>3.0f} -> {r.risk_score:<3.0f}"
+              f"   confidence {f.confidence_pct}% -> {r.confidence_pct}%")
+    print()
+    print("  Risk does not move; confidence falls. There is no wait-time term")
+    print("  anywhere in core/, and simulation/clock.py never passes the wait")
+    print("  duration to the engine. Waiting does not make a patient sicker, so")
+    print("  it must not make their score higher -- a queue that reordered")
+    print("  itself by patience would be indistinguishable from one that had")
+    print("  detected something. What waiting does is make our picture older,")
+    print("  and the Phase 5 staleness driver already says so.")
+
+
+def show_latency(engine):
+    rule("DETECTION LATENCY  --  the number a scoring model cannot produce")
+    print("  A change in a patient is not an event the department receives.")
+    print("  Nobody is notified. A falling SpO2 exists in the patient and")
+    print("  nowhere else until somebody takes observations -- which, in a")
+    print("  waiting room, happens when a reassessment comes due.")
+    print()
+    print("  So the clock separates the two. A trajectory event changes the")
+    print("  patient. The next scheduled look is what OBSERVES it. The gap is")
+    print("  a property of the hospital's reassessment policy.\n")
+
+    for profile in ("medium_ed", "small_ed"):
+        hospital = HospitalConfig.load(profile)
+        clock, timeline = _run_clock(build_engine(profile))
+        print(f"  {hospital.name}")
+        print(f"    {hospital.nurses_on_shift} nurses.  WATCH every "
+              f"{hospital.reassess_due_after(TriageBand.L1_WATCH)} min, "
+              f"LOOK every {hospital.reassess_due_after(TriageBand.L2_LOOK)}, "
+              f"PULL every {hospital.reassess_due_after(TriageBand.L3_PULL)}.")
+        for change in timeline.detection_latencies():
+            note = change.note[:38] + "..." if len(change.note) > 41 else change.note
+            print(f"      {change.patient_id}  changed t={change.at_minute:<4} "
+                  f"seen t={change.observed_at:<4} "
+                  f"({change.latency} min later)   {note}")
+        undetected = timeline.undetected()
+        if undetected:
+            print(f"      {len(undetected)} change(s) still unobserved at the horizon")
+        print()
+
+    print("  P014 is the case to read carefully. In the district hospital she")
+    print("  escalates twice -- WATCH to LOOK at t=78, LOOK to PULL at t=98 --")
+    print("  because a 30-minute WATCH interval catches her halfway down.")
+    print()
+    print("  In the rural ED she does not get a gentler version of the same")
+    print("  picture. She gets NO intermediate warning at all: the 45-minute")
+    print("  WATCH interval means the first look after her arrival is the one")
+    print("  that finds her already at PULL. A two-band jump, 27 minutes after")
+    print("  the fact.")
+    print()
+    print("  Nothing about the engine changed between those two runs. Same")
+    print("  weights, same rules, same patient, same trajectory. The entire")
+    print("  difference is a staffing-driven number in a JSON file, which makes")
+    print("  the reassessment interval a SAFETY parameter rather than a")
+    print("  scheduling convenience -- and makes it visible, which is the")
+    print("  argument for having a clock at all.")
+    print()
+    print("  One honest limit. This clock fires every reassessment exactly when")
+    print("  due, and no real department achieves that. The gap between the")
+    print("  policy and the practice is most of what actually goes wrong in a")
+    print("  waiting room, and our timeline is therefore the optimistic case.")
+    print("  Phase 14 is where that assumption is supposed to get stressed.")
+
+
+def show_timeline(engine, patient_id):
+    rule(f"TIMELINE  --  {patient_id}")
+    clock, timeline = _run_clock(engine)
+    records = timeline.for_patient(patient_id)
+    if not records:
+        print(f"  {patient_id} never arrives inside the simulation horizon.")
+        return
+
+    print(f"  {'':3}{'t':>4}  {'ID':<6}{'why':<9}{'band':<17}{'risk':>4}"
+          f"{'conf':>6}  what changed")
+    print("  " + "-" * 74)
+    for record in records:
+        print(render_record(record))
+
+    changes = [c for c in timeline.changes if c.patient_id == patient_id]
+    if changes:
+        print("\n  WHAT WAS TRUE, versus WHEN WE KNEW IT")
+        for c in changes:
+            seen = f"observed t={c.observed_at} ({c.latency} min later)" \
+                if c.observed_at is not None else "never observed"
+            print(f"    t={c.at_minute:<5}{seen}")
+            for line in _wrap(c.note, 62):
+                print(f"      {line}")
+
+    print()
+    print("  The '^' rows are escalations found at a scheduled reassessment.")
+    print("  The rows with no marker are re-scores that changed nothing, and")
+    print("  they are most of the file. They are also why core/audit.py leaves")
+    print("  routine assessment logging OFF by default: this one shift produced")
+    print(f"  {len(timeline.records)} assessments and "
+          f"{len(timeline.escalations())} band changes, and a log that recorded")
+    print("  all of the first kind would bury all of the second.")
+
+    flat = [r for r in records if r.previous_band is not None
+            and not r.escalated and r.trigger == REASSESSMENT]
+    if len(flat) > 6:
+        last = records[-1]
+        print()
+        print("  ONE THING THIS OUTPUT EXPOSES, AND WE HAVE NOT SOLVED")
+        print(f"  {patient_id} reaches {last.final_band.word} and is then re-scored "
+              f"{len(flat)} times")
+        print("  with nothing changing, because nobody has come to see her. The")
+        print("  clock is doing exactly what it was asked to and the answer is")
+        print("  useless: re-scoring a patient does not treat them, and a")
+        print("  reassessment that keeps returning the same band is evidence of")
+        print("  an unmet need, not evidence that things are fine.")
+        print()
+        print("  The queue has no way to say 'this patient has been at PULL for")
+        print("  two hours and no one has arrived'. Waiting-time-against-band is")
+        print("  a Phase 12 dashboard concern and a Phase 13 workflow concern,")
+        print("  and it is worth naming now rather than letting the flat rows")
+        print("  read as reassurance.")
 
 
 def show_rules(engine, patients):
@@ -595,6 +896,19 @@ def main():
     if args and args[0] == "--confidence":
         show_confidence_board(engine, load_patients())
         return
+    if args and args[0] == "--clock":
+        show_clock(engine)
+        return
+    if args and args[0] == "--latency":
+        show_latency(engine)
+        return
+    if args and args[0] == "--timeline":
+        pid = args[1] if len(args) > 1 else "P014"
+        show_timeline(engine, pid)
+        return
+    if args and args[0] == "--audit":
+        show_audit(engine)
+        return
     if args and args[0] == "--ratchet":
         show_ratchet(engine)
         return
@@ -624,46 +938,66 @@ def main():
     show_facial_comparison(engine)
     show_ratchet(engine)
     show_override(engine)
+    show_audit(engine)
     show_rules(engine, patients)
     show_fairness(engine)
     show_provenance(engine)
     show_confidence_board(engine, patients)
     show_staleness(engine, load_patient("P002"))
+    show_clock(engine)
+    show_latency(engine)
 
-    rule("PHASE 8 RESULT  --  the band stops being a proposal")
-    print("  Since Phase 3 every panel has ended with the same caveat: this is")
-    print("  a PROPOSAL, not a decision. That caveat is now retired. Every band")
-    print("  on the board above is a final_band, produced by the ratchet.")
+    rule("PHASE 10 RESULT  --  triage stops being a snapshot")
+    print("  Every phase before this one scored a patient at a moment, and")
+    print("  every demo had to hand it the moment. simulation/clock.py is the")
+    print("  component that decides on its own when to look, which is the")
+    print("  difference between a scoring function and a triage system.")
     print()
-    print("  What the ratchet actually is, in full: final = max(proposed,")
-    print("  previous). There is no branch in core/ratchet.py capable of")
-    print("  returning anything lower, and if one ever appears the code raises")
-    print("  RatchetViolation rather than quietly complying. De-escalation")
-    print("  lives in exactly one function, which will not run without a nurse")
-    print("  identifier, a reason that survives validation, and acknowledgement")
-    print("  of any safety rule currently holding the floor.")
+    print("  Three kinds of event: a patient arrives, the world changes, a")
+    print("  reassessment falls due. The third is the phase. Over one simulated")
+    print("  shift the roster produced 242 assessments and 3 band changes, and")
+    print("  all three escalations were found at a scheduled reassessment --")
+    print("  nobody handed the system new data and asked it to think again.")
     print()
-    print("  audit_violations() is the property expressed as a query rather")
-    print("  than a claim: every transition that lowered a band with no nurse")
-    print("  behind it. It returns nothing here, and it is the same query a")
-    print("  governance team could run over a log this code did not produce.")
+    print("  THE LOOP CLOSES ON ITSELF. A reassessment interval is a property")
+    print("  of the current band, and the band is the output of the assessment")
+    print("  the reassessment produces. Because the ratchet means an automated")
+    print("  path can only RAISE a band, an automated path can only SHORTEN the")
+    print("  loop. A deteriorating patient is looked at more often, and nothing")
+    print("  the machine can do by itself makes it look less often. Neither")
+    print("  mechanism has that property alone.")
     print()
-    print("  The cost, again, because it should not be buried: a patient who")
-    print("  genuinely improves keeps their old band until a human agrees. In a")
-    print("  busy department that means the queue sometimes carries acuity that")
-    print("  reality has moved past. That is the right side to be wrong on --")
-    print("  the alternative failure mode is a machine walking a deteriorating")
-    print("  patient back down, which kills people while this one wastes a")
-    print("  nurse's time. It is still a cost, and a department adopting this")
-    print("  should adopt it knowing that.")
+    print("  A CHANGE IS NOT AN OBSERVATION. The first working version of the")
+    print("  clock scored the instant a trajectory event fired, and produced a")
+    print("  better demo than the correct version does. It had quietly given")
+    print("  the system a sensor no waiting room has, and made its own")
+    print("  reassessment schedule decorative -- a schedule that can never")
+    print("  discover anything is not a schedule. Now a change alters the")
+    print("  patient and the next scheduled look is what finds it, so detection")
+    print("  latency is a number we can print instead of a thing we hope about.")
     print()
-    print("  Still missing: the audit log (9), which turns the in-memory")
-    print("  transition list into something append-only and survivable, and the")
-    print("  simulation clock (10), which drives re-assessment properly instead")
-    print("  of the stand-in used by --ratchet. ALL VALUES ARE SIMULATED and")
-    print("  clinically unvalidated; the safety rules are demonstration")
-    print("  patterns, not clinical protocols, and no clinician has reviewed")
-    print("  any of it.\n")
+    print("  WAITING DOES NOT MAKE A PATIENT SICKER. No wait-time term exists")
+    print("  in core/, and the clock never passes a wait duration to the")
+    print("  engine. Risk stays flat while confidence decays, because what")
+    print("  waiting changes is the age of our picture, not the patient. P017")
+    print("  is in the roster to prove it: re-scored seven times, moves")
+    print("  nowhere. 22 of 24 patients do not move at all.")
+    print()
+    print("  Still missing: the adaptive questions (11) that close the gaps")
+    print("  Phase 5 has been naming since P016 first showed up at 18% baseline")
+    print("  knowledge, and the dashboard (12) -- which now has a real problem")
+    print("  to solve, because --timeline shows P014 sitting at PULL through")
+    print("  eighteen identical reassessments with nobody coming to see her,")
+    print("  and the queue has no way to say so.")
+    print()
+    print("  ALL VALUES ARE SIMULATED and clinically unvalidated. The clock")
+    print("  fires every reassessment exactly when due, which no real")
+    print("  department achieves; our timeline is the optimistic case and")
+    print("  Phase 14 is where that assumption gets stressed. Nothing arrives")
+    print("  that was not authored -- there is no arrival generator and no")
+    print("  random deterioration -- so this file cannot tell you anything")
+    print("  about throughput.\n")
+
 
 
 if __name__ == "__main__":

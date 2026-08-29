@@ -54,9 +54,16 @@ fail, not by a comment.
 reason for it, and a set of plausible bands. Missing history raises uncertainty;
 it never lowers risk.
 
+**4. It looks again on its own.** A simulation clock re-assesses every waiting
+patient on their band's schedule, so deterioration is found by the system going
+to look rather than by somebody handing it new data. All three escalations in a
+simulated shift are found this way — and the gap between a patient changing and
+the system noticing is reported as a number, because it is a consequence of the
+department's staffing, not of the model.
+
 ## Status
 
-Built in phases. Currently at **Phase 8 — the Ratchet Engine**.
+Built in phases. Currently at **Phase 10 — the simulation clock**.
 
 | Phase | | Status |
 |---|---|---|
@@ -68,9 +75,9 @@ Built in phases. Currently at **Phase 8 — the Ratchet Engine**.
 | 6 | Facial signal module | done |
 | 7 | Safety guard | done |
 | 8 | Ratchet engine | done |
-| 9 | Audit log | next |
-| 10 | Simulation clock & re-triage | |
-| 11 | VOI adaptive questions | |
+| 9 | Audit log | done |
+| 10 | Simulation clock & re-triage | done |
+| 11 | VOI adaptive questions | next |
 | 12 | Dashboard | |
 | 13 | Nurse workflow | |
 | 14 | Surge mode | |
@@ -114,6 +121,10 @@ python -m scripts.run_triage --provenance    # what a weaker baseline costs
 python -m scripts.run_triage --rules         # every safety rule firing on the board
 python -m scripts.run_triage --ratchet       # the one-way acuity mechanism
 python -m scripts.run_triage --override      # what a nurse de-escalation requires
+python -m scripts.run_triage --audit         # the append-only log, and tampering with it
+python -m scripts.run_triage --clock         # a whole simulated shift
+python -m scripts.run_triage --latency       # how long deterioration goes unseen
+python -m scripts.run_triage --timeline P014 # one patient through the clock
 python -m scripts.run_triage --stale P002    # confidence decaying while a patient waits
 python -m scripts.run_triage --hospital small_ed
 ```
@@ -281,6 +292,173 @@ a machine quietly walking a deteriorating patient back down, which kills people
 while this one wastes a nurse's time. But it is a real cost, not a free win, and
 a department adopting this should adopt it knowing that.
 
+## The audit log
+
+`Ratchet.audit_violations()` answers "has this system ever lowered a band
+without a human" about objects in memory — which answers it only for people
+willing to run our code and trust it while they do. That is nobody in a
+governance role.
+
+`core/audit.py` writes the same events to JSONL: one JSON object per line,
+openable in any text editor, readable by someone who has never seen this
+repository. Band transitions, accepted overrides, and **refused** overrides all
+go in — a log of outcomes alone would show one clean de-escalation and hide that
+it took three attempts, which is a signal about the interface or about a
+clinician under pressure.
+
+There is no `update` method and no `delete` method. Not disabled, not private —
+the operations do not exist. A correction is a new entry saying a correction was
+made, which is how a clinical record works and for the same reason.
+
+### Tamper-evident, not tamper-proof
+
+Each entry hashes the one before it, so editing a line, deleting one, or
+reordering two breaks every hash after it and `verify()` names the first
+sequence number where the chain fails:
+
+```
+someone edits a reason after the fact
+  verifies: False
+  seq 7: content has been altered since it was written
+
+someone deletes an inconvenient line
+  verifies: False
+  seq 6: expected 5 (an entry was removed or reordered)
+```
+
+The limit matters as much as the property. Anyone who can write this file can
+recompute the whole chain and produce a valid log saying whatever they like.
+Hash chaining catches casual alteration, a quietly corrected reason, a crash
+mid-write. It does not defend against a determined administrator — that needs
+the digest anchored somewhere the writer does not control, which is a deployment
+decision we are not in a position to make.
+
+### Completeness
+
+`replay_bands()` reconstructs every patient's current acuity from the log alone
+and matches the running system exactly. If that ever stopped matching, something
+determining a patient's band would be living only in memory — which is the
+difference between a record and a diary of selected highlights.
+
+## The simulation clock
+
+Every phase before this one scored a patient at a *moment*, and every demo had
+to hand it the moment. `simulation/clock.py` is the component that decides on
+its own when to look again — which is the difference between a scoring function
+and a triage system.
+
+Three kinds of event, and only three:
+
+| | |
+|---|---|
+| **arrival** | a patient enters the department and is scored for the first time |
+| **trajectory** | the world changes: new vitals, a new symptom, an answered question |
+| **reassessment** | the patient's band says they were due a fresh look |
+
+The third one is the phase. The first two are the world happening to us; the
+third is the system deciding, on its own schedule, to go and look.
+
+Over one simulated shift the roster produces **242 assessments and 3 band
+changes**, and all three escalations are found at a scheduled reassessment —
+nobody handed the system new data and asked it to think again.
+
+### A change is not an observation
+
+The first working version of the clock scored the instant a trajectory event
+fired. It produced a better-looking demo than the correct version does, and it
+was wrong.
+
+A patient's SpO2 falling is not an event the department receives. Nobody is
+notified. The number exists in the patient and nowhere else until somebody takes
+observations, which in a waiting room happens when a reassessment comes due. A
+clock that scores the moment the world changes has quietly given the system a
+sensor it does not have — and, worse, made its own reassessment schedule
+decorative, because a schedule that can never discover anything is not a
+schedule.
+
+So a trajectory event changes the patient's **state** and records that a change
+is pending. The next reassessment is what **observes** it. The gap between those
+two minutes is detection latency, and it is a property of the hospital's
+reassessment policy rather than of anything clever in `core/`:
+
+```
+Medium District Hospital  (8 nurses; WATCH every 30 min, LOOK 20, PULL 8)
+  P014  changed t=66   seen t=78   (12 min later)
+  P014  changed t=82   seen t=98   (16 min later)
+
+Small Rural ED            (3 nurses; WATCH every 45 min, LOOK 30, PULL 10)
+  P014  changed t=66   seen t=93   (27 min later)
+```
+
+Read P014 carefully, because the rural ED does not get a gentler version of the
+same picture. In the district hospital she escalates twice, WATCH → LOOK → PULL,
+because a 30-minute interval catches her halfway down. In the rural ED she gets
+**no intermediate warning at all**: the first look after arrival is the one that
+finds her already at PULL, a two-band jump 27 minutes after the fact.
+
+Nothing about the engine changed between those runs — same weights, same rules,
+same patient, same trajectory. The entire difference is a staffing-driven number
+in a JSON file, which makes the reassessment interval a **safety parameter**
+rather than a scheduling convenience, and makes it visible. That is the argument
+for having a clock at all.
+
+### The loop closes on itself
+
+A reassessment interval is a property of the *current* band, and the band is the
+output of the assessment the reassessment produces. Because the ratchet means an
+automated path can only ever **raise** a band, an automated path can only ever
+**shorten** the loop.
+
+A deteriorating patient is looked at more often, and nothing the machine can do
+on its own makes it look less often. Neither mechanism has that property alone.
+
+### Waiting does not make a patient sicker
+
+There is no wait-time term anywhere in `core/`, and the clock never passes a wait
+duration to the engine. A patient re-scored at minute 200 on the same
+observations gets exactly the score they got at minute 20.
+
+What changes is **confidence**: the Phase 5 staleness driver decays as the
+observations age, so the queue shows a waiting patient becoming *less certain*
+rather than more settled. An overdue reassessment is a flag, never a score
+adjustment. A system that quietly escalated people for waiting would produce a
+queue that reordered itself by patience and would be indistinguishable from one
+that had detected something.
+
+P017 exists in the roster to make that checkable: same waiting room, same clock,
+same triggers, no deterioration. She is re-scored seven times and moves nowhere.
+**22 of 24 patients do not move at all.** Without her, P014's escalation could be
+dismissed as a system that simply escalates everyone who waits long enough.
+
+### What the clock does not model
+
+- It fires every reassessment **exactly when due**, and no real department
+  achieves that. The gap between the policy and the practice is most of what
+  actually goes wrong in a waiting room; our timeline is the optimistic case, and
+  Phase 14 is where that assumption is supposed to get stressed.
+- It models the **waiting room**, not the department. Every hospital profile sets
+  the CODE interval to 0 minutes, which is a way of writing "this person must not
+  be waiting". Those patients leave the reassessment schedule rather than being
+  re-scored infinitely often — a loop that took the zero literally would never
+  advance the clock again, and would look exactly like thoroughness until the
+  process stopped responding.
+- **Nothing arrives that was not authored.** There is no arrival generator and no
+  random deterioration, so this file cannot tell you anything about throughput.
+  It is deterministic: same roster, same timeline, every time, which is what lets
+  the Phase 15 tests assert on it.
+
+### One thing this exposes that we have not solved
+
+`--timeline P014` shows her reaching PULL and then being re-scored eighteen more
+times with nothing changing, because nobody has come to see her. The clock is
+doing exactly what it was asked to and the answer is useless: re-scoring a
+patient does not treat them, and a reassessment that keeps returning the same
+band is evidence of an **unmet need**, not evidence that things are fine.
+
+The queue has no way to say "this patient has been at PULL for two hours and no
+one has arrived". That is a Phase 12 dashboard concern and a Phase 13 workflow
+concern, and it is named here rather than left to read as reassurance.
+
 ## The safety guard
 
 A weighted score is a good instrument for ranking and a bad one for absolutes.
@@ -334,7 +512,7 @@ against capacity is a nurse's decision (Phase 13) under explicit surge policy
 
 ```
 core/         engine — framework-free, fully testable
-simulation/   clock, arrivals, deterioration, surge
+simulation/   clock.py — event queue, re-triage schedule, detection latency
 app/          Streamlit UI — rendering only, zero logic
 data/         synthetic patients, hospital profiles, weights, thresholds
 tests/        the safety argument, expressed as code
@@ -349,8 +527,14 @@ cutoffs in `data/hospitals/`, point values in `data/risk_weights.json`,
 vital-sign ranges in `data/clinical_thresholds.json`, confidence weights in
 `data/uncertainty_config.json`, baseline reliability in
 `data/facial_config.json`, the hard rules in `data/safety_rules.json`, and
-override policy in `data/ratchet_config.json`. Nothing a judge might question is hard-coded in
+override policy in `data/ratchet_config.json`, log settings in
+`data/audit_config.json`, and clock horizon and event caps in
+`data/simulation_config.json`. Nothing a judge might question is hard-coded in
 the engine.
+
+Reassessment intervals are the exception worth naming: they live in
+`data/hospitals/`, alongside bed counts and staffing, because that is what they
+are a consequence of — and `--latency` shows what changing them costs.
 
 ## Both long-standing gaps, now closed
 
@@ -380,5 +564,11 @@ baseline did or did not explain them, and it never uses a diagnosis as a
 finding. The safety rules are simplified demonstration patterns, not clinical
 protocols, and no clinician has reviewed them. The ratchet's override policy is
 a demonstration setting; a real department would set it with its clinical
-governance lead rather than inherit ours. `docs/limitations.md` sets
-out what real validation would require.
+governance lead rather than inherit ours. The audit log holds patient
+identifiers and acuity history, which is health information; retention, access
+control and lawful basis are Phase 16 and are not settled by anything built so
+far. The simulation clock replays 24 authored patients on a punctual schedule;
+it has no arrival model, no random deterioration and no missed reassessments, so
+its detection-latency figures describe our own scenario file and say nothing
+about throughput or about how a real department behaves.
+`docs/limitations.md` sets out what real validation would require.

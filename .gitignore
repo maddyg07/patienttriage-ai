@@ -9,3 +9,4 @@ env/
 *.log
 audit_log.jsonl
 .pytest_cache/
+logs/

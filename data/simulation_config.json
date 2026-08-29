@@ -1,0 +1,8 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION VALUES. Not derived from any real hospital scheduling policy.",
+  "clock": {
+    "default_horizon_minutes": 240,
+    "max_events_per_run": 5000
+  },
+  "_horizon_note": "The horizon is a safety cap on the demo, not a clinical concept -- it stops the clock from running past the end of a simulated shift. max_events_per_run is a second, independent safety valve: if a bug ever made the epoch-cancellation in simulation/clock.py stop working, this is what turns an infinite loop into a loud RuntimeError instead of a hung process."
+}

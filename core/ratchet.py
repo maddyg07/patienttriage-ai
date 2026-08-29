@@ -48,9 +48,10 @@ accountability, which is worse than documenting nothing at all.
 
 WHAT THIS FILE DOES NOT DO
 --------------------------
-  * No persistence. Band history lives in memory. Phase 9 replaces it with an
-    append-only audit log, and the BandTransition records below are already
-    shaped for that.
+  * (Phase 9 added persistence. Every transition, every accepted override and
+    every REJECTED override is written to an append-only, hash-chained log by
+    core/audit.py. The in-memory history below is now a convenience cache; the
+    file is the record.)
   * No clock. Phase 10 drives re-assessment; this file only ever compares a new
     assessment against what it was told last time.
 
@@ -65,6 +66,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from core.audit import (
+    BAND_TRANSITION,
+    OVERRIDE_ACCEPTED,
+    OVERRIDE_REJECTED,
+    AuditLog,
+)
 from core.enums import ChangedBy, TriageBand
 from core.schema import Assessment
 
@@ -164,13 +171,35 @@ class Ratchet:
     contradiction in terms.
     """
 
-    def __init__(self, config: Optional[dict] = None):
+    def __init__(self, config: Optional[dict] = None,
+                 audit: Optional[AuditLog] = None):
         cfg = config or _load(RATCHET_CONFIG_FILE)
         self.policy = cfg["override"]
         self._rejected = {r.strip().lower()
                           for r in self.policy["rejected_reasons"]}
         self.current: Dict[str, TriageBand] = {}
         self.transitions: Dict[str, List[BandTransition]] = {}
+        # Phase 9. The in-memory structures above are now a cache; this is the
+        # record. Passing audit=None disables logging, which exists so tests
+        # can run without writing files -- never as a production option.
+        self.audit = audit
+
+    def _log(self, event: str, transition: BandTransition,
+             extra: Optional[dict] = None) -> None:
+        if self.audit is None:
+            return
+        payload = {
+            "from_band": transition.from_band.word if transition.from_band else None,
+            "to_band": transition.to_band.word,
+            "direction": transition.direction,
+            "changed_by": str(transition.changed_by),
+            "reason": transition.reason,
+            "flags": list(transition.flags),
+            "acknowledged_rules": list(transition.acknowledged_rules),
+        }
+        payload.update(extra or {})
+        self.audit.append(event, transition.patient_id, transition.at_minute,
+                          payload, transition.actor_id)
 
     # -----------------------------------------------------------------------
     # The automated path
@@ -235,6 +264,9 @@ class Ratchet:
             transition.flags.append(
                 f"held: engine proposed {proposed.word}")
         self.transitions.setdefault(pid, []).append(transition)
+        self._log(BAND_TRANSITION, transition,
+                  {"proposed_band": proposed.word,
+                   "risk_score": assessment.risk_score})
         return assessment
 
     @staticmethod
@@ -277,21 +309,36 @@ class Ratchet:
         going_down = new_band < current
         acknowledged = list(acknowledged_rules or [])
 
-        if self.policy["require_nurse_id"] and not nurse_id.strip():
-            raise OverrideRejected(
-                "an override must be attributable: no nurse identifier given")
+        try:
+            if self.policy["require_nurse_id"] and not nurse_id.strip():
+                raise OverrideRejected(
+                    "an override must be attributable: no nurse identifier given")
 
-        if going_down and self.policy["require_reason_on_deescalation"]:
-            self._validate_reason(reason)
+            if going_down and self.policy["require_reason_on_deescalation"]:
+                self._validate_reason(reason)
 
-            binding = [f.rule.rule_id for f in assessment.rule_firings
-                       if f.binding]
-            if binding and self.policy["must_acknowledge_binding_rules"]:
-                missing = [r for r in binding if r not in acknowledged]
-                if missing:
-                    raise OverrideRejected(
-                        f"band is held by {', '.join(missing)}; an override "
-                        f"must acknowledge the rule it is removing")
+                binding = [f.rule.rule_id for f in assessment.rule_firings
+                           if f.binding]
+                if binding and self.policy["must_acknowledge_binding_rules"]:
+                    missing = [r for r in binding if r not in acknowledged]
+                    if missing:
+                        raise OverrideRejected(
+                            f"band is held by {', '.join(missing)}; an override "
+                            f"must acknowledge the rule it is removing")
+        except OverrideRejected as exc:
+            # A refusal is an event, not a non-event. Three refused attempts
+            # before an accepted one says something worth knowing about the
+            # interface or about a clinician under pressure, and a log of
+            # outcomes alone would hide it completely.
+            if self.audit is not None:
+                self.audit.append(
+                    OVERRIDE_REJECTED, pid, assessment.at_minute,
+                    {"attempted_band": new_band.word,
+                     "from_band": current.word,
+                     "reason": reason.strip(),
+                     "rejection": str(exc)},
+                    nurse_id.strip())
+            raise
 
         flags = []
         if (going_down and self.policy["flag_multi_band_drops"]
@@ -318,6 +365,7 @@ class Ratchet:
         assessment.change_reason = reason.strip()
         self.current[pid] = new_band
         self.transitions.setdefault(pid, []).append(transition)
+        self._log(OVERRIDE_ACCEPTED, transition)
         return transition
 
     def _validate_reason(self, reason: str) -> None:
