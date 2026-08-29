@@ -444,6 +444,21 @@ class Assessment:
     quality: Optional[DataQuality] = None                # Phase 5 detail
 
     @property
+    def band(self) -> Optional[TriageBand]:
+        """
+        The band to display. Falls back to the proposal until the ratchet has
+        seen this assessment, so no caller can accidentally render a None where
+        a patient's acuity should be.
+        """
+        return self.final_band if self.final_band is not None else self.proposed_band
+
+    @property
+    def band_was_held(self) -> bool:
+        """The engine wanted to go lower and the ratchet refused."""
+        return (self.final_band is not None and self.proposed_band is not None
+                and self.final_band > self.proposed_band)
+
+    @property
     def band_was_floored(self) -> bool:
         """True when a hard rule, not the score, decided this band."""
         return bool(self.floor_reason)

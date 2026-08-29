@@ -1,0 +1,32 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION POLICY -- NOT A CLINICAL GOVERNANCE STANDARD. These settings describe how a prototype handles acuity changes. A real department would set them with its clinical governance lead, not inherit ours.",
+
+  "_the_rule": "The engine may raise a band. The engine may never lower one. Only a nurse can de-escalate, and only with a reason that goes on the record under their name. Everything in this file is about the second half of that sentence, because the first half needs no configuration -- it is enforced by the absence of a code path.",
+
+  "_why_reasons_are_asymmetric": "An escalation already carries its justification: the contribution trace, the confidence panel and any rule firing are all on the record, and demanding the nurse type an explanation for the machine's own decision would be theatre. A de-escalation is the opposite. It overrides evidence the system has recorded, so the person overriding it supplies the missing piece. Requiring a reason in only one direction is not an oversight.",
+
+  "override": {
+    "require_reason_on_deescalation": true,
+    "require_reason_on_escalation": false,
+    "min_reason_chars": 15,
+    "require_nurse_id": true,
+
+    "_rejected_reasons_note": "Strings that pass a length check while saying nothing. A free-text box that accepts 'fine' has documented nothing and creates a false audit trail, which is worse than no audit trail because it looks like accountability. This list is short, case-insensitive, and matched whole -- it is a guard against reflex, not an attempt to judge clinical writing.",
+    "rejected_reasons": [
+      "ok", "okay", "fine", "n/a", "na", "none", "no reason", "-", "--",
+      "patient fine", "looks fine", "seems ok", "nothing", "test", "asdf",
+      "clinical judgement", "clinical judgment", "my judgement"
+    ],
+
+    "_acknowledge_note": "When the current band was set by a Phase 7 safety rule rather than by the score, the nurse is shown that rule and their override must acknowledge it. They are still free to disagree -- a rule is a floor for the machine, not for a clinician -- but they should not be able to remove a floor without seeing what put it there.",
+    "must_acknowledge_binding_rules": true,
+
+    "_multi_band_note": "A drop of more than one band in a single action is permitted but flagged for review. We do not block it: a nurse who has just examined a patient may well have information that moves them two levels, and a system that forces them to click twice has achieved nothing except a worse record of what they actually decided.",
+    "flag_multi_band_drops": true
+  },
+
+  "_history_note": "Phase 8 keeps band history in memory so the ratchet has something to compare against. Phase 9 replaces this with a real append-only audit log; the transition records below are already shaped for it.",
+  "history": {
+    "keep_full_transitions": true
+  }
+}

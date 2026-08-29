@@ -1,7 +1,7 @@
 """
 scripts/run_triage.py
 =====================
-Phase 7 verification. Scores all 24 synthetic patients, attaches confidence and
+Phase 8 verification. Scores all 24 synthetic patients, attaches confidence and
 a plausible band set to each, and prints the ranked queue plus explanation and
 uncertainty panels.
 
@@ -16,6 +16,8 @@ Run from the repository root:
     python -m scripts.run_triage --ladder P016  # the facial decision path, step by step
     python -m scripts.run_triage --provenance   # what a weaker baseline costs
     python -m scripts.run_triage --rules        # every safety rule firing on the board
+    python -m scripts.run_triage --ratchet      # the one-way acuity mechanism
+    python -m scripts.run_triage --override     # what a nurse de-escalation requires
     python -m scripts.run_triage --stale P002   # confidence decaying while waiting
     python -m scripts.run_triage --hospital small_ed
 """
@@ -29,6 +31,11 @@ from core.facial import (
     explain_facial,
     fairness_counterfactual,
     resolve_baseline,
+)
+from core.ratchet import (
+    OverrideRejected,
+    Ratchet,
+    explain_history,
 )
 from core.risk_engine import RiskEngine, explain
 from core.safety_rules import explain_rules
@@ -47,7 +54,11 @@ def build_engine(profile="medium_ed"):
 
 def show_queue(engine, patients):
     rule(f"TRIAGE QUEUE  --  {engine.hospital.name}")
-    scored = [(p, engine.assess(p)) for p in patients]
+    # Every band on this board has passed through the ratchet. On a first
+    # sighting it changes nothing, which is the point: the mechanism is always
+    # in the path, not switched on when a patient looks interesting.
+    ratchet = Ratchet()
+    scored = [(p, ratchet.record(engine.assess(p))) for p in patients]
     scored.sort(key=lambda pair: -pair[1].risk_score)
 
     print(f"  {'rank':<6}{'ID':<7}{'age':>4}  {'band':<11}{'risk':>5}"
@@ -58,20 +69,20 @@ def show_queue(engine, patients):
         top = drivers[0].label if drivers else "nothing abnormal detected"
         if len(top) > 24:
             top = top[:21] + "..."
-        marker = " *" if a.proposed_band.value >= 3 else "  "
+        marker = " *" if a.band.value >= 3 else "  "
         if a.band_was_floored:
             marker = " R"
         # "could be" is the most urgent band our uncertainty cannot rule out.
         worst = a.worst_plausible_band
         could = "" if worst == a.proposed_band else f"up to {worst.word}"
         print(f" {marker}{i:<4}{p.patient_id:<7}{int(p.age_years):>4}  "
-              f"{str(a.proposed_band):<11}{a.risk_score:>5.0f}"
+              f"{str(a.band):<11}{a.risk_score:>5.0f}"
               f"{a.confidence_pct:>5}%  {could:<12}{top}")
 
     print()
     counts = {}
     for _, a in scored:
-        counts[a.proposed_band] = counts.get(a.proposed_band, 0) + 1
+        counts[a.band] = counts.get(a.band, 0) + 1
     summary = "  ".join(
         f"{b.word} {counts.get(b, 0)}" for b in sorted(counts, reverse=True))
     print(f"  band distribution: {summary}")
@@ -83,6 +94,8 @@ def show_queue(engine, patients):
     if floored:
         print(f"  R marks a band set by a safety rule rather than by the score "
               f"({len(floored)} patients)")
+    print(f"  every band above is a RATCHET output; {len(ratchet.audit_violations())} "
+          f"transitions on this board lowered a band without a nurse")
 
     code = counts.get(TriageBand.L4_CODE, 0)
     bays = engine.hospital.resus_bays
@@ -96,6 +109,137 @@ def show_queue(engine, patients):
         print(f"  surge policy (Phase 14), made visibly and with a logged")
         print(f"  reason -- not something the engine quietly does for them.")
     return scored
+
+
+def _apply_update(patient, update):
+    """
+    Fold one trajectory step into a patient.
+
+    A stand-in for Phase 10, which owns the clock properly. Kept here so the
+    ratchet can be demonstrated on the patients who were authored for it.
+    """
+    import copy
+
+    p = copy.deepcopy(patient)
+    if update.vitals:
+        p.vitals = update.vitals
+    if update.observed:
+        p.observed = update.observed
+    if update.facial:
+        p.facial = update.facial
+    p.self_report.symptoms = list(p.self_report.symptoms) + list(update.new_symptoms)
+    return p
+
+
+def show_ratchet(engine):
+    rule("THE RATCHET  --  what happens to a patient while they wait")
+    ratchet = Ratchet()
+
+    print("  P014 arrives unremarkable and gets worse in the waiting room.")
+    print("  Each row is a fresh assessment folded through the ratchet.\n")
+    p = load_patient("P014")
+    print(f"  {'t':>5}  {'proposed':<10}{'FINAL':<10}{'author':<16}why")
+    print("  " + "-" * 74)
+    states = [(p.arrival_minute, p)] + [
+        (u.at_minute, _apply_update(p, u)) for u in p.trajectory]
+    for minute, state in states:
+        a = ratchet.record(engine.assess(state, now_minute=minute))
+        why = a.change_reason or "-"
+        if len(why) > 30:
+            why = why[:27] + "..."
+        author = "ratchet_held" if a.band_was_held else str(a.changed_by)
+        print(f"  {minute:>5}  {a.proposed_band.word:<10}{a.band.word:<10}"
+              f"{author:<16}{why}")
+
+    print()
+    print("  Now the case the mechanism exists for. P014 is given oxygen and")
+    print("  improves. The engine sees better numbers and proposes a lower")
+    print("  band. Watch what the FINAL column does.\n")
+
+    import copy
+
+    recovered = copy.deepcopy(states[-1][1])
+    recovered.vitals.spo2 = 97
+    recovered.vitals.respiratory_rate = 18
+    recovered.vitals.heart_rate = 88
+    recovered.vitals.measured_at_minute = 100
+    recovered.observed.skin_pallor_or_cyanosis = recovered.observed.skin_pallor_or_cyanosis.__class__("no")
+    a = ratchet.record(engine.assess(recovered, now_minute=100))
+    author = "ratchet_held" if a.band_was_held else str(a.changed_by)
+    print(f"  {100:>5}  {a.proposed_band.word:<10}{a.band.word:<10}"
+          f"{author:<16}{a.change_reason[:30]}")
+    print()
+    print("  The engine proposed a lower band and did not get one. That single")
+    print("  row is the entire product claim, and it is enforced by the")
+    print("  absence of a code path rather than by a policy: core/ratchet.py")
+    print("  computes max(proposed, previous) and has no branch capable of")
+    print("  returning anything else.")
+    print()
+    print("  ACUITY HISTORY")
+    print(explain_history(ratchet, "P014"))
+    print()
+    print("  Two honest notes on this demo. The improvement above is")
+    print("  CONSTRUCTED -- no patient in the roster gets better, which is a")
+    print("  real gap in our synthetic data and worth authoring before Round 2.")
+    print("  And the hold has a cost: P014 keeps PULL after the numbers have")
+    print("  improved, until a nurse agrees they have. We think that is the right")
+    print("  side to be wrong on, because the alternative failure mode is a")
+    print("  machine quietly walking a deteriorating patient back down. But it")
+    print("  is a cost, not a free win.")
+
+
+def show_override(engine):
+    rule("THE ONLY WAY A BAND COMES DOWN")
+    ratchet = Ratchet()
+    p = load_patient("P011")
+    a = ratchet.record(engine.assess(p))
+    print(f"  P011 is at {a.band}, floored by a Phase 7 rule.")
+    print(f"  A nurse believes that is wrong. Here is what the system asks of")
+    print(f"  them before it will move.\n")
+
+    attempts = [
+        ("", "Seen and reviewed, patient is stable now", "no identifier"),
+        ("RN-4471", "", "no reason"),
+        ("RN-4471", "ok", "a reason that is not one"),
+        ("RN-4471", "clinical judgement", "a reason that is not one"),
+        ("RN-4471", "looks better", "too short to document anything"),
+    ]
+    for nurse_id, reason, label in attempts:
+        try:
+            ratchet.nurse_override(a, TriageBand.L2_LOOK, reason, nurse_id)
+            print(f"  ACCEPTED  {label}  <- this should not happen")
+        except OverrideRejected as exc:
+            shown = f'"{reason}"' if reason else "(empty)"
+            if len(shown) > 22:
+                shown = shown[:19] + '..."'
+            print(f"  rejected  {shown:<24}{exc}")
+
+    try:
+        ratchet.nurse_override(
+            a, TriageBand.L2_LOOK,
+            "Reviewed with stroke team, deficits fully resolved, CT clear",
+            "RN-4471")
+    except OverrideRejected as exc:
+        print(f"  rejected  {'(a real reason)':<24}{exc}")
+
+    t = ratchet.nurse_override(
+        a, TriageBand.L2_LOOK,
+        "Reviewed with stroke team, deficits fully resolved, CT clear",
+        "RN-4471", acknowledged_rules=["R1_acute_neuro_cluster"])
+    print(f"\n  ACCEPTED\n    {t}")
+    for flag in t.flags:
+        print(f"      ! {flag}")
+
+    print()
+    print("  The nurse is never blocked from disagreeing with a safety rule. A")
+    print("  Phase 7 floor is a floor for the machine, not for a clinician.")
+    print("  What they cannot do is remove one without being shown what put it")
+    print("  there, and without their name and their reasoning going on the")
+    print("  record next to the decision.")
+    print()
+    print("  Note the rejected list. A free-text box that accepts 'fine' has")
+    print("  documented nothing while looking like accountability, which is")
+    print("  worse than documenting nothing at all.")
 
 
 def show_rules(engine, patients):
@@ -451,6 +595,12 @@ def main():
     if args and args[0] == "--confidence":
         show_confidence_board(engine, load_patients())
         return
+    if args and args[0] == "--ratchet":
+        show_ratchet(engine)
+        return
+    if args and args[0] == "--override":
+        show_override(engine)
+        return
     if args and args[0] == "--rules":
         show_rules(engine, load_patients())
         return
@@ -472,42 +622,48 @@ def main():
     patients = load_patients()
     show_queue(engine, patients)
     show_facial_comparison(engine)
+    show_ratchet(engine)
+    show_override(engine)
     show_rules(engine, patients)
     show_fairness(engine)
     show_provenance(engine)
     show_confidence_board(engine, patients)
     show_staleness(engine, load_patient("P002"))
 
-    rule("PHASE 7 RESULT")
-    print("  Both long-standing gaps are closed, and neither was closed by")
-    print("  changing a weight.")
+    rule("PHASE 8 RESULT  --  the band stops being a proposal")
+    print("  Since Phase 3 every panel has ended with the same caveat: this is")
+    print("  a PROPOSAL, not a decision. That caveat is now retired. Every band")
+    print("  on the board above is a final_band, produced by the ratchet.")
     print()
-    print("  P011, the acute stroke, has sat at L3 since Phase 3. He still")
-    print("  scores 64 and CODE still starts at 75. What changed is that a")
-    print("  named rule now floors the acute neurological cluster at CODE and")
-    print("  shows its evidence. The tempting fix -- inflate the facial and")
-    print("  speech weights until he crosses -- would have re-ranked all 24")
-    print("  patients to move one, and the distortion would have been")
-    print("  invisible because the arithmetic still looks principled.")
+    print("  What the ratchet actually is, in full: final = max(proposed,")
+    print("  previous). There is no branch in core/ratchet.py capable of")
+    print("  returning anything lower, and if one ever appears the code raises")
+    print("  RatchetViolation rather than quietly complying. De-escalation")
+    print("  lives in exactly one function, which will not run without a nurse")
+    print("  identifier, a reason that survives validation, and acknowledgement")
+    print("  of any safety rule currently holding the floor.")
     print()
-    print("  P016 no longer sits last. She is L2 LOOK, floored by R7, because")
-    print("  a concerning finding we cannot resolve on thin information is not")
-    print("  the same thing as a patient with nothing wrong. Her score is")
-    print("  still 4. Nobody pretended otherwise.")
+    print("  audit_violations() is the property expressed as a query rather")
+    print("  than a claim: every transition that lowered a band with no nurse")
+    print("  behind it. It returns nothing here, and it is the same query a")
+    print("  governance team could run over a log this code did not produce.")
     print()
-    print("  The cost, stated plainly: after Phase 7 the score and the band can")
-    print("  disagree. P011 reads 64/100 and L4 CODE on the same panel. That")
-    print("  looks like a bug until you read the rule underneath it, and we")
-    print("  would rather explain it than hide it. A score you can trust to")
-    print("  mean what it says, plus rules that can override it in the open,")
-    print("  beats a score quietly bent until it produces the right answers.")
+    print("  The cost, again, because it should not be buried: a patient who")
+    print("  genuinely improves keeps their old band until a human agrees. In a")
+    print("  busy department that means the queue sometimes carries acuity that")
+    print("  reality has moved past. That is the right side to be wrong on --")
+    print("  the alternative failure mode is a machine walking a deteriorating")
+    print("  patient back down, which kills people while this one wastes a")
+    print("  nurse's time. It is still a cost, and a department adopting this")
+    print("  should adopt it knowing that.")
     print()
-    print("  Still missing: the ratchet (8) and the audit log (9). The band")
-    print("  above remains a PROPOSAL. Nothing in this system can lower it yet,")
-    print("  and after Phase 8 only a nurse will be able to, with a reason on")
-    print("  the record. ALL VALUES ARE SIMULATED and clinically unvalidated;")
-    print("  the rules above are simplified demonstration patterns, not")
-    print("  clinical protocols, and no clinician has reviewed them.\n")
+    print("  Still missing: the audit log (9), which turns the in-memory")
+    print("  transition list into something append-only and survivable, and the")
+    print("  simulation clock (10), which drives re-assessment properly instead")
+    print("  of the stand-in used by --ratchet. ALL VALUES ARE SIMULATED and")
+    print("  clinically unvalidated; the safety rules are demonstration")
+    print("  patterns, not clinical protocols, and no clinician has reviewed")
+    print("  any of it.\n")
 
 
 if __name__ == "__main__":

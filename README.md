@@ -40,7 +40,8 @@ Three things make it different from a severity classifier:
 
 **1. The Ratchet Engine.** The AI can raise a patient's acuity. It can never
 lower it. Only a nurse can de-escalate, and only with a logged reason. Safety
-asymmetry is a mechanism here, not a slogan.
+asymmetry is a mechanism here, not a slogan — enforced by the absence of a code
+path, and checkable after the fact with `audit_violations()`.
 
 **2. Baseline-aware facial reasoning.** A patient with congenital asymmetry,
 acid-attack scarring or chronic post-stroke weakness must not be flagged as an
@@ -55,7 +56,7 @@ it never lowers risk.
 
 ## Status
 
-Built in phases. Currently at **Phase 7 — the safety guard**.
+Built in phases. Currently at **Phase 8 — the Ratchet Engine**.
 
 | Phase | | Status |
 |---|---|---|
@@ -66,8 +67,8 @@ Built in phases. Currently at **Phase 7 — the safety guard**.
 | 5 | Data quality & uncertainty | done |
 | 6 | Facial signal module | done |
 | 7 | Safety guard | done |
-| 8 | Ratchet engine | next |
-| 9 | Audit log | |
+| 8 | Ratchet engine | done |
+| 9 | Audit log | next |
 | 10 | Simulation clock & re-triage | |
 | 11 | VOI adaptive questions | |
 | 12 | Dashboard | |
@@ -111,6 +112,8 @@ python -m scripts.run_triage --fairness      # the counterfactual fairness test
 python -m scripts.run_triage --ladder P016   # the facial decision path, step by step
 python -m scripts.run_triage --provenance    # what a weaker baseline costs
 python -m scripts.run_triage --rules         # every safety rule firing on the board
+python -m scripts.run_triage --ratchet       # the one-way acuity mechanism
+python -m scripts.run_triage --override      # what a nurse de-escalation requires
 python -m scripts.run_triage --stale P002    # confidence decaying while a patient waits
 python -m scripts.run_triage --hospital small_ed
 ```
@@ -210,6 +213,74 @@ at a time and her score stays at 66 while confidence falls from 94% to 74%.
 The correct response to a missing baseline is to say so loudly and go and find
 out (Phase 11), not to convert our ignorance into the patient's points.
 
+## The Ratchet Engine
+
+    The engine may RAISE a patient's acuity.
+    The engine may NEVER lower it.
+    Only a nurse can de-escalate, and only with a reason on the record.
+
+Most triage systems that claim safety bias implement it as a weighting: score a
+little higher, set thresholds a little lower, and let the model move a patient
+in either direction as its inputs change. That is a thumb on the scale, not
+asymmetry, and a confident enough model will still walk a deteriorating patient
+back down.
+
+Here the asymmetry is structural. Every automated path through `core/ratchet.py`
+computes `final = max(proposed, previous)`. There is no branch, flag or config
+value that produces a lower band, and if one ever appears the code raises
+`RatchetViolation` rather than quietly complying. `--ratchet` shows the row that
+is the whole product claim:
+
+```
+      t  proposed  FINAL     author          why
+     48  WATCH     WATCH     system_initial  -
+     66  LOOK      LOOK      ai_escalation   risk 32: reports: breathlessness
+     82  PULL      PULL      ai_escalation   risk 73: reports: chest pain
+    100  LOOK      PULL      ratchet_held    engine proposed LOOK; held at PULL
+```
+
+`Ratchet.audit_violations()` returns every transition that lowered a band with
+no nurse behind it. It returns nothing, and it is the same query a governance
+team could run over a log this code did not produce — which is the form the
+property is actually useful in.
+
+### De-escalation
+
+One function can lower a band, and it will not run without a nurse identifier,
+a reason that survives validation, and acknowledgement of any safety rule
+currently holding the floor. `--override` walks the rejections:
+
+```
+rejected  (empty)              lowering a band requires a reason on the record
+rejected  "ok"                 'ok' is not a reason...
+rejected  "clinical judgement" 'clinical judgement' is not a reason...
+rejected  "looks better"       reason is 12 characters; policy requires 15
+rejected  (a real reason)      band is held by R1_acute_neuro_cluster; an
+                               override must acknowledge the rule it is removing
+```
+
+Reasons are required in one direction only, and that is not an oversight. An
+escalation already carries its justification — the contribution trace, the
+confidence panel, the rule firing are all on the record — and making a nurse
+type an explanation for the machine's own decision would be theatre. A
+de-escalation overrides evidence the system has recorded, so the person
+overriding it supplies the missing piece.
+
+The nurse is never blocked from disagreeing with a safety rule. A Phase 7 floor
+is a floor for the machine, not for a clinician. What they cannot do is remove
+one without being shown what put it there.
+
+### What the ratchet costs
+
+A patient who genuinely improves keeps their old band until a human agrees they
+have. In a busy department that means the queue sometimes carries acuity that
+reality has moved past.
+
+We think that is the right side to be wrong on: the alternative failure mode is
+a machine quietly walking a deteriorating patient back down, which kills people
+while this one wastes a nurse's time. But it is a real cost, not a free win, and
+a department adopting this should adopt it knowing that.
+
 ## The safety guard
 
 A weighted score is a good instrument for ranking and a bad one for absolutes.
@@ -277,7 +348,8 @@ Every tunable number lives in `data/` behind a visible disclaimer — band
 cutoffs in `data/hospitals/`, point values in `data/risk_weights.json`,
 vital-sign ranges in `data/clinical_thresholds.json`, confidence weights in
 `data/uncertainty_config.json`, baseline reliability in
-`data/facial_config.json`, and the hard rules in `data/safety_rules.json`. Nothing a judge might question is hard-coded in
+`data/facial_config.json`, the hard rules in `data/safety_rules.json`, and
+override policy in `data/ratchet_config.json`. Nothing a judge might question is hard-coded in
 the engine.
 
 ## Both long-standing gaps, now closed
@@ -306,5 +378,7 @@ and is not a probability of any clinical outcome. The facial module does not
 diagnose anything: it reports that findings appeared together and that a
 baseline did or did not explain them, and it never uses a diagnosis as a
 finding. The safety rules are simplified demonstration patterns, not clinical
-protocols, and no clinician has reviewed them. `docs/limitations.md` sets
+protocols, and no clinician has reviewed them. The ratchet's override policy is
+a demonstration setting; a real department would set it with its clinical
+governance lead rather than inherit ours. `docs/limitations.md` sets
 out what real validation would require.
