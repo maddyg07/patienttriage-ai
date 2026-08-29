@@ -1,0 +1,14 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION THRESHOLDS -- NOT CLINICAL GUIDELINES. These values were written by the project team to be internally plausible for a prototype. They are not drawn from any validated source, have not been reviewed by a clinician, and must never be used for real triage.",
+  "_phase_note": "Phase 3 defines the ADULT band only. Phases 4 adds infant, child, adolescent and geriatric. Until then the engine falls back to adult values for every age, which is deliberately unsafe and is demonstrated as such by scripts/run_triage.py.",
+  "_reading_the_bands": "For each vital: critical_low < low < high < critical_high. A value outside low..high is a MILD deviation. A value outside critical_low..critical_high is a SEVERE deviation. spo2 has no upper bound.",
+
+  "adult": {
+    "heart_rate":        {"critical_low": 40,  "low": 50,   "high": 110,  "critical_high": 130},
+    "respiratory_rate":  {"critical_low": 8,   "low": 10,   "high": 22,   "critical_high": 28},
+    "spo2":              {"critical_low": 90,  "low": 94,   "high": null, "critical_high": null},
+    "temperature_c":     {"critical_low": 35.0,"low": 36.0, "high": 38.3, "critical_high": 39.5},
+    "systolic_bp":       {"critical_low": 90,  "low": 100,  "high": 180,  "critical_high": 200},
+    "diastolic_bp":      {"critical_low": 50,  "low": 60,   "high": 110,  "critical_high": 120}
+  }
+}

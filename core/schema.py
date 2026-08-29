@@ -332,7 +332,13 @@ class Contribution:
     """
     One line of the explainability panel.
 
-        Contribution("SpO2 91% (low for adult)", 20.0, "vitals")
+        Contribution("SpO2 91% (low for adult)", 20.0, "vitals", "respiratory")
+
+    `source` is the MODALITY the signal came from (vitals, voice, facial).
+    `domain` is the CLINICAL SYSTEM it speaks to (respiratory, neurological).
+    They are different questions, and the domain is what gets capped: a
+    breathless patient can trip seven respiratory signals, but that is one
+    clinical problem, not seven.
 
     The risk engine builds the score BY appending these, so the explanation is
     not reconstructed after the fact -- it IS the calculation. That is why we
@@ -342,6 +348,7 @@ class Contribution:
     label: str
     points: float
     source: str = ""
+    domain: str = "general"
 
     def __str__(self) -> str:
         sign = "+" if self.points >= 0 else ""
