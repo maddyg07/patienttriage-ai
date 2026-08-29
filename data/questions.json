@@ -1,0 +1,254 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION QUESTIONS. These are illustrative triage prompts, not a validated screening instrument, and no clinician has reviewed them. Costs are rough estimates of effort, not measured times.",
+  "_design_note": "Every question names the confidence driver it addresses, who can answer it, and what each answer does to the patient record. The answer effects are field assignments applied by core/questions.py; a question that cannot state what its answers would change is a question we cannot compute a value for, and is therefore not in this file.",
+  "_cost_note": "cost_seconds is effort, not clock time -- it is what the question costs the person asking. Retrieving a record or phoning a relative is expensive because it occupies a nurse, not because the seconds matter. Cost is a tie-breaker in ranking and never a reason to skip a question that can move a band; see the ranking policy below.",
+
+  "ranking": {
+    "band_movement_weight": 0.75,
+    "confidence_weight": 0.25,
+    "deescalation_only_weight": 0.35,
+    "cost_reference_seconds": 60.0,
+    "max_cost_penalty": 0.35,
+    "min_useful_value": 0.01
+  },
+  "_ranking_note": "Band movement dominates deliberately. A question that raises confidence without being able to change what we do about the patient is tidying, not triage. Cost can demote a question by at most max_cost_penalty, so an expensive question that can move a band still outranks a free one that cannot.",
+  "_direction_note": "deescalation_only_weight prices a question whose answers can only propose a LOWER band. Because of the ratchet such a question cannot move a waiting patient at all; its value is that it hands a nurse documented grounds for a review they would otherwise have no basis for. Real, and worth a fraction of finding somebody sicker than we thought. Ranking the two equally would let the questioner spend its one cheap question confirming that a patient is fine.",
+
+  "asking_policy": {
+    "max_questions_per_patient": 3,
+    "stop_when_no_band_movement": true
+  },
+  "_asking_policy_note": "A cap exists because the failure mode of an adaptive questioner is an interrogation. A patient in pain being asked eleven questions by a screen is a worse experience than being asked none, and the marginal question is almost always worth less than the one before it.",
+
+  "questions": [
+    {
+      "id": "Q_facial_baseline",
+      "text": "Is this facial asymmetry new today, or has your face always looked this way?",
+      "addresses": "baseline",
+      "answerable_by": "patient_or_collateral",
+      "cost_seconds": 20,
+      "applicable_when": "facial_finding_without_baseline",
+      "answers": [
+        {
+          "label": "new today",
+          "effects": {
+            "facial.baseline_known": "yes",
+            "facial.baseline_asymmetry_present": "no",
+            "facial.baseline_condition": "none",
+            "facial.change_reported_as_new": "yes"
+          }
+        },
+        {
+          "label": "always been like this",
+          "effects": {
+            "facial.baseline_known": "yes",
+            "facial.baseline_asymmetry_present": "yes",
+            "facial.baseline_condition": "congenital",
+            "facial.change_reported_as_new": "no"
+          }
+        },
+        {
+          "label": "cannot say",
+          "effects": {}
+        }
+      ]
+    },
+    {
+      "id": "Q_headache_onset",
+      "text": "Did the headache come on suddenly, and is this the worst you have ever had?",
+      "addresses": "completeness",
+      "answerable_by": "patient",
+      "cost_seconds": 15,
+      "applicable_when": "headache_without_onset_detail",
+      "answers": [
+        {
+          "label": "sudden, and the worst ever",
+          "effects": {
+            "self_report.symptoms+": ["thunderclap onset", "worst headache of life"]
+          }
+        },
+        {
+          "label": "gradual, and not the worst",
+          "effects": {}
+        }
+      ]
+    },
+    {
+      "id": "Q_breathless_confirm",
+      "text": "You have told us you are not short of breath. Can you walk across the room, or say a full sentence without stopping?",
+      "addresses": "agreement",
+      "answerable_by": "patient",
+      "cost_seconds": 45,
+      "applicable_when": "denial_contradicted_by_findings",
+      "answers": [
+        {
+          "label": "no, has to stop",
+          "effects": {
+            "self_report.denies-": ["breathlessness"],
+            "self_report.symptoms+": ["breathlessness"],
+            "voice.unable_to_speak_full_sentence": "yes"
+          }
+        },
+        {
+          "label": "yes, manages it",
+          "effects": {}
+        }
+      ]
+    },
+    {
+      "id": "Q_chest_pain",
+      "text": "Any pain, pressure or tightness in the chest, jaw or arm?",
+      "addresses": "completeness",
+      "answerable_by": "patient",
+      "cost_seconds": 15,
+      "applicable_when": "cardiorespiratory_findings_no_chest_symptom",
+      "answers": [
+        {
+          "label": "yes",
+          "effects": {
+            "self_report.symptoms+": ["chest pain"]
+          }
+        },
+        {
+          "label": "no",
+          "effects": {}
+        }
+      ]
+    },
+    {
+      "id": "Q_history_retrieve",
+      "text": "Retrieve prior records: conditions, regular medications, previous attendances.",
+      "addresses": "baseline",
+      "answerable_by": "record_system",
+      "cost_seconds": 120,
+      "applicable_when": "history_thin",
+      "answers": [
+        {
+          "label": "record found",
+          "effects": {
+            "history.tier": "partial",
+            "history.previous_visits": 1
+          }
+        },
+        {
+          "label": "nothing on file",
+          "effects": {}
+        }
+      ]
+    },
+    {
+      "id": "Q_fresh_vitals",
+      "text": "Take a fresh set of observations.",
+      "addresses": "staleness",
+      "answerable_by": "nurse",
+      "cost_seconds": 180,
+      "applicable_when": "vitals_stale_or_incomplete",
+      "answers": [
+        {
+          "label": "observations taken",
+          "effects": {
+            "vitals.refresh": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "Q_pain_score",
+      "text": "On a scale of nought to ten, how bad is the pain right now?",
+      "addresses": "completeness",
+      "answerable_by": "patient",
+      "cost_seconds": 10,
+      "applicable_when": "pain_not_obtained",
+      "answers": [
+        {
+          "label": "severe (8-10)",
+          "effects": {
+            "self_report.pain_score": 9
+          }
+        },
+        {
+          "label": "moderate (4-7)",
+          "effects": {
+            "self_report.pain_score": 5
+          }
+        },
+        {
+          "label": "mild (0-3)",
+          "effects": {
+            "self_report.pain_score": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "Q_infant_feeding",
+      "text": "Ask the parent: is the baby feeding normally, and are the nappies as wet as usual?",
+      "addresses": "completeness",
+      "answerable_by": "collateral",
+      "cost_seconds": 30,
+      "applicable_when": "infant_without_feeding_history",
+      "answers": [
+        {
+          "label": "feeding poorly",
+          "effects": {
+            "self_report.symptoms+": ["poor feeding"]
+          }
+        },
+        {
+          "label": "feeding normally",
+          "effects": {}
+        }
+      ]
+    },
+    {
+      "id": "Q_medications",
+      "text": "Are you taking any blood thinners, or anything for your heart or blood pressure?",
+      "addresses": "baseline",
+      "answerable_by": "patient_or_collateral",
+      "cost_seconds": 30,
+      "applicable_when": "older_patient_without_medication_list",
+      "answers": [
+        {
+          "label": "yes, an anticoagulant",
+          "effects": {
+            "history.medications+": ["apixaban"],
+            "history.tier": "partial"
+          }
+        },
+        {
+          "label": "yes, a heart or blood pressure tablet",
+          "effects": {
+            "history.medications+": ["bisoprolol"],
+            "history.tier": "partial"
+          }
+        },
+        {
+          "label": "none",
+          "effects": {
+            "history.tier": "partial"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Q_head_strike",
+      "text": "Did you hit your head, and did you black out at any point?",
+      "addresses": "completeness",
+      "answerable_by": "patient_or_collateral",
+      "cost_seconds": 15,
+      "applicable_when": "fall_or_trauma_without_head_detail",
+      "answers": [
+        {
+          "label": "yes, struck head",
+          "effects": {
+            "self_report.symptoms+": ["head strike"]
+          }
+        },
+        {
+          "label": "no head injury",
+          "effects": {}
+        }
+      ]
+    }
+  ]
+}

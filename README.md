@@ -61,9 +61,15 @@ simulated shift are found this way — and the gap between a patient changing an
 the system noticing is reported as a number, because it is a consequence of the
 department's staffing, not of the model.
 
+**5. It knows what to ask.** Rather than reporting a gap, the system prices
+every question it could ask by re-running the whole pipeline on each possible
+answer, and ranks them by whether the answer could change the band — not by how
+much they would raise confidence. Asking cannot lower anyone's acuity, and a
+patient who cannot answer is routed to collateral sources rather than skipped.
+
 ## Status
 
-Built in phases. Currently at **Phase 10 — the simulation clock**.
+Built in phases. Currently at **Phase 11 — value-of-information questions**.
 
 | Phase | | Status |
 |---|---|---|
@@ -77,8 +83,8 @@ Built in phases. Currently at **Phase 10 — the simulation clock**.
 | 8 | Ratchet engine | done |
 | 9 | Audit log | done |
 | 10 | Simulation clock & re-triage | done |
-| 11 | VOI adaptive questions | next |
-| 12 | Dashboard | |
+| 11 | VOI adaptive questions | done |
+| 12 | Dashboard | next |
 | 13 | Nurse workflow | |
 | 14 | Surge mode | |
 | 15 | Test suite | |
@@ -125,6 +131,8 @@ python -m scripts.run_triage --audit         # the append-only log, and tamperin
 python -m scripts.run_triage --clock         # a whole simulated shift
 python -m scripts.run_triage --latency       # how long deterioration goes unseen
 python -m scripts.run_triage --timeline P014 # one patient through the clock
+python -m scripts.run_triage --questions     # the next question, for everyone
+python -m scripts.run_triage --ask P019      # what turns on a single answer
 python -m scripts.run_triage --stale P002    # confidence decaying while a patient waits
 python -m scripts.run_triage --hospital small_ed
 ```
@@ -459,6 +467,141 @@ The queue has no way to say "this patient has been at PULL for two hours and no
 one has arrived". That is a Phase 12 dashboard concern and a Phase 13 workflow
 concern, and it is named here rather than left to read as reassurance.
 
+## Asking the right question
+
+Since Phase 5 every assessment has carried a confidence figure with a named
+dominant driver. P016 sat at 18% baseline knowledge for six phases while the
+system said, very honestly and completely uselessly, that it could not tell
+whether her face had changed. **Naming a gap is not closing one.**
+
+`core/questions.py` closes them by answering one question about the questions:
+of everything we could ask, which one is worth asking?
+
+### Value is measured in decisions, not in information
+
+The obvious ranking is by information gained — ask whatever raises confidence
+most. It is the wrong objective. A question that takes a patient from 72% to 95%
+and leaves them in the same band has tidied our records; it has not changed
+anything about their care.
+
+So candidates are ranked on **band movement** first, confidence second, and cost
+only as a tie-breaker that can demote a question but never rescue one that
+changes no decision.
+
+`--questions` shows the check on that:
+
+```
+P004  WATCH     86%    0.75  LOOK        Any pain, pressure or tight...
+P013  WATCH     95%    0.94  PULL        Did the headache come on su...
+P016  LOOK      72%    0.28  review only Is this facial asymmetry ne...
+P019  WATCH     88%    0.94  PULL        Did the headache come on su...
+
+6 of 24 patients have a question worth asking.
+```
+
+P024 holds the **lowest confidence on the board at 64%** and the questioner has
+nothing to ask him, because he is already at CODE and no answer can move him
+higher. An information-maximising questioner would have gone straight to the
+sickest patient in the department to improve its records.
+
+### How the value is computed
+
+By counterfactual, not by a model. Each possible answer is applied to a copy of
+the patient and the **entire pipeline is re-run** — score, age rules, facial
+module, uncertainty, safety rules. The value of the question is the spread of
+outcomes that come back. Slow, and completely transparent: the answer to "why
+did it ask that?" is a table showing what each answer would have done.
+
+```
+Did the headache come on suddenly, and is this the worst you have ever had?
+  addresses completeness; ask patient; about 15s
+    "sudden, and the worst ever"  risk  55  conf  88%  PULL   ESCALATES to PULL
+    "gradual, and not the worst"  risk   7  conf  88%  WATCH  (record unchanged)
+```
+
+### Direction is priced
+
+An answer that could reveal a patient is sicker changes what happens to them
+today. An answer that could only propose a **lower** band changes nothing on its
+own — the ratchet holds a waiting patient where they are — so its worth is in
+handing a nurse documented grounds for a review they would otherwise have no
+basis for. Real, and priced at a fraction.
+
+That is also the honest answer to what the questioner does for P016: it cannot
+move her, it can only let somebody else move her. Ranking the two directions
+equally would let the questioner spend its one cheap question confirming that
+people are fine, which is precisely the instinct a safety-biased system should
+not have.
+
+Asking can never lower a band, and that falls out of the design rather than
+being enforced here: every answer produces a fresh assessment that goes through
+the ratchet like any other. **A non-answer is not a no** — "cannot say" is a real
+answer with an empty effect set that keeps the uncertainty and never reduces
+risk. A questioner that treated silence as reassurance would be strictly worse
+than not asking.
+
+### Who can answer
+
+A question aimed at a patient who cannot communicate is worth nothing however
+high it scores, so `answerable_by` is checked *before* value is computed and
+those patients are routed to collateral and record sources instead. This is not
+politeness: an unconscious patient, an infant and a person who does not share a
+language with the nurse are three of the highest-risk groups in any emergency
+department, and a questioner that quietly returned an empty list for all of them
+would fail exactly where it is needed most.
+
+### This is not expected value of information
+
+Textbook VOI weights each outcome by the probability of that answer. We do not
+have those probabilities. Nothing here is calibrated against real patients, so
+any prior over how a patient is likely to answer would be invented — and it
+would be the invented number driving the entire ranking, which is the worst
+possible place to hide one.
+
+So we compute the **range** of outcomes rather than their expectation: a question
+is valuable if *some* answer changes the band. That is a possibility measure,
+deliberately biased toward asking, and it will sometimes rank a question highly
+because of an answer the patient was never likely to give. We would rather
+over-ask than silently weight a life-changing answer down to nothing on a prior
+we made up. The interface is expectation-shaped, so a calibrated answer model
+drops in later without changing a consumer.
+
+### What a question is worth, in minutes
+
+P019 asked at intake reaches PULL at t=68. Left to the clock, the same fact
+arrives on its own at t=74 and is found at the next scheduled look:
+
+```
+asked at intake       t=68    ->  PULL at t=68
+discovered by clock   t=74    ->  PULL at t=98
+```
+
+**Thirty minutes, for a fifteen-second question** — and only measurable because
+Phase 10 built the thing that measures the alternative.
+
+### One earlier claim retracted
+
+Phase 5 said in as many words that the largest confidence penalty would be the
+best question to ask next. P019 is the counterexample: her dominant driver is
+`agreement`, and the only question that can move her band addresses
+`completeness`. The docstring in `core/schema.py` has been corrected rather than
+left to age quietly.
+
+Uncertainty tells you where our picture is thin. It does not tell you where a
+*decision* is fragile, and those are different places.
+
+### A problem with our own data
+
+Two of the ten questions in the bank never fire on this roster. They are not
+broken — they never fire because our synthetic patients **arrive volunteering
+everything**. P006 states unprompted that she struck her head; P005's parent has
+already reported poor feeding. Real patients answer the question they were asked
+and no more.
+
+This roster therefore systematically *understates* what a questioner is worth,
+and the honest version of the Phase 2 data would author patients with things
+they have not mentioned yet.
+
 ## The safety guard
 
 A weighted score is a good instrument for ranking and a bad one for absolutes.
@@ -528,9 +671,10 @@ vital-sign ranges in `data/clinical_thresholds.json`, confidence weights in
 `data/uncertainty_config.json`, baseline reliability in
 `data/facial_config.json`, the hard rules in `data/safety_rules.json`, and
 override policy in `data/ratchet_config.json`, log settings in
-`data/audit_config.json`, and clock horizon and event caps in
-`data/simulation_config.json`. Nothing a judge might question is hard-coded in
-the engine.
+`data/audit_config.json`, clock horizon and event caps in
+`data/simulation_config.json`, and the question bank and its ranking weights in
+`data/questions.json`. Nothing a judge might question is hard-coded in the
+engine.
 
 Reassessment intervals are the exception worth naming: they live in
 `data/hospitals/`, alongside bed counts and staffing, because that is what they
@@ -570,5 +714,8 @@ control and lawful basis are Phase 16 and are not settled by anything built so
 far. The simulation clock replays 24 authored patients on a punctual schedule;
 it has no arrival model, no random deterioration and no missed reassessments, so
 its detection-latency figures describe our own scenario file and say nothing
-about throughput or about how a real department behaves.
+about throughput or about how a real department behaves. The question bank is
+ten illustrative prompts that no clinician has reviewed and is not a screening
+instrument; its value figures are a possibility measure over our own synthetic
+answers, not a calibrated expected value of information.
 `docs/limitations.md` sets out what real validation would require.

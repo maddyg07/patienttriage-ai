@@ -365,9 +365,16 @@ class QualityDriver:
 
     Confidence is useless as a bare number. "62%" tells a nurse nothing they
     can act on. "62%, because four vitals are missing and the face has no
-    documented baseline" tells them exactly which gap to close first, which is
-    also what makes the Phase 11 adaptive questions possible: the largest
-    penalty is the best question to ask next.
+    documented baseline" tells them exactly which gap to close first.
+
+    CORRECTION, made in Phase 11. This docstring used to end by claiming that
+    the largest penalty is therefore the best question to ask next. That was
+    wrong, and P019 is the counterexample: her dominant driver is `agreement`
+    while the only question that can move her band addresses `completeness`.
+    Uncertainty tells you where our picture is thin. It does not tell you where
+    a DECISION is fragile, and those are different places. core/questions.py
+    ranks by what turns on the answer, and reads this class for context rather
+    than for its ranking.
     """
 
     name: str

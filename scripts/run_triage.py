@@ -1,9 +1,10 @@
 """
 scripts/run_triage.py
 =====================
-Phase 10 verification. Scores all 24 synthetic patients, attaches confidence and
+Phase 11 verification. Scores all 24 synthetic patients, attaches confidence and
 a plausible band set to each, prints the ranked queue plus explanation and
-uncertainty panels, and runs the whole roster through a simulated shift.
+uncertainty panels, runs the whole roster through a simulated shift, and prices
+the next question worth asking each of them.
 
 Run from the repository root:
     python -m scripts.run_triage                # ranked queue
@@ -22,6 +23,8 @@ Run from the repository root:
     python -m scripts.run_triage --clock        # a whole simulated shift
     python -m scripts.run_triage --latency      # how long deterioration goes unseen
     python -m scripts.run_triage --timeline P014  # one patient through the clock
+    python -m scripts.run_triage --questions    # the next question, for everyone
+    python -m scripts.run_triage --ask P019     # what turns on one answer
     python -m scripts.run_triage --stale P002   # confidence decaying while waiting
     python -m scripts.run_triage --hospital small_ed
 """
@@ -543,6 +546,152 @@ def show_timeline(engine, patient_id):
         print("  read as reassurance.")
 
 
+def show_ask(engine, patient):
+    from core.questions import QuestionEngine, explain_question
+
+    rule(f"WHAT TO ASK NEXT  --  {patient.patient_id}")
+    qe = QuestionEngine(engine)
+    a = engine.assess(patient)
+    driver = a.quality.dominant_driver() if a.quality else None
+
+    print(f"  currently {a.band}, confidence {a.confidence_pct}%")
+    if driver:
+        print(f"  biggest gap: {driver.name} at {driver.quality_pct}%")
+        for reason in driver.reasons[:2]:
+            for i, line in enumerate(_wrap(reason, 64)):
+                print(f"    {'- ' if i == 0 else '  '}{line}")
+
+    priced = qe.evaluate(patient, a)
+    if not priced:
+        print(f"\n  Nothing worth asking: {qe.why_not(patient, a)}.")
+        return
+
+    print()
+    for i, value in enumerate(priced, 1):
+        direction = "can escalate" if value.can_escalate else (
+            "grounds for review only" if value.only_proposes_lower
+            else "no band movement")
+        print(f"  {i}. value {value.value:.2f}   {direction}")
+        print(explain_question(value))
+        print()
+
+    best = priced[0]
+    print("  The ranking is by what turns on the ANSWER, not by what we do not")
+    print("  know. A question that raises confidence twenty points and leaves")
+    print("  the patient in the same band has tidied our records; it has not")
+    print("  changed anything about their care.")
+
+    if driver and best.question.addresses != driver.name:
+        print()
+        print(f"  Worth noticing here: the biggest gap is {driver.name}, and the")
+        print(f"  best question addresses {best.question.addresses} instead.")
+        print()
+        print("  Phase 5 said in as many words that the largest confidence")
+        print("  penalty would be the best question to ask next. This patient")
+        print("  is the counterexample, and the claim was wrong. Uncertainty")
+        print("  tells you where our picture is thin; it does not tell you")
+        print("  where a decision is fragile, and those are different places.")
+        print("  The docstring in core/schema.py has been corrected rather")
+        print("  than quietly left to age.")
+
+    if best.only_proposes_lower:
+        print()
+        print("  Note the direction here. Every answer to the top question")
+        print("  proposes a LOWER band, and because of the ratchet that cannot")
+        print("  move this patient at all -- she stays where she is until a")
+        print("  nurse agrees. What the answer does is give that nurse")
+        print("  documented grounds for a review they currently have no basis")
+        print("  for. Real value, priced at a fraction of finding somebody")
+        print("  sicker than we thought, because a questioner that spent its")
+        print("  one cheap question confirming people are fine would have")
+        print("  exactly the wrong instinct.")
+
+
+def show_questions(engine, patients):
+    from core.questions import QuestionEngine
+
+    rule("THE NEXT QUESTION, FOR EVERY PATIENT ON THE BOARD")
+    qe = QuestionEngine(engine)
+
+    print(f"  {'ID':<6}{'band':<8}{'conf':>5}  {'value':>6}  {'could reach':<12}ask")
+    print("  " + "-" * 74)
+
+    asked, silent = [], []
+    for p in patients:
+        a = engine.assess(p)
+        best = qe.next_question(p, a)
+        if best is None:
+            silent.append((p, a))
+            continue
+        asked.append((p, a, best))
+        reach = (best.highest_band.word if best.can_escalate
+                 else "review only")
+        text = best.question.text
+        if len(text) > 30:
+            text = text[:27] + "..."
+        print(f"  {p.patient_id:<6}{a.band.word:<8}{a.confidence_pct:>4}%  "
+              f"{best.value:>6.2f}  {reach:<12}{text}")
+
+    from collections import Counter
+    reasons = Counter(qe.why_not(p, a) for p, a in silent)
+
+    print()
+    print(f"  {len(asked)} of {len(patients)} patients have a question worth asking.")
+    print(f"  {len(silent)} do not, and that silence is a result rather than a gap.")
+    print(f"  {len(reasons)} distinct reasons, and they are not the same thing:")
+    print()
+    for reason, count in reasons.most_common():
+        for i, line in enumerate(_wrap(reason, 64)):
+            prefix = f"    {count:>2}  " if i == 0 else " " * 8
+            print(f"{prefix}{line}")
+
+    print()
+    print("  P024 is the one to point at. He has the LOWEST confidence on the")
+    print("  board at 64% and the questioner has nothing to ask him, because he")
+    print("  is already at CODE and no answer can move him higher. That is")
+    print("  correct: you do not interrogate a patient on the way to resus to")
+    print("  improve your records. An information-maximising questioner would")
+    print("  have gone straight to him.")
+
+    print("\n  WHAT A QUESTION IS WORTH, IN MINUTES")
+    print("  P019 is authored as the value-of-information case: an ordinary")
+    print("  headache until one question reveals a sudden onset and the worst")
+    print("  pain of her life. Phase 10 can measure what happens WITHOUT the")
+    print("  question, by letting the answer arrive on its own and waiting for")
+    print("  the next scheduled look to find it.\n")
+
+    p019 = load_patient("P019")
+    intake = p019.arrival_minute
+    _, timeline = _run_clock(engine)
+    found = next((r for r in timeline.for_patient("P019") if r.escalated), None)
+    best = qe.next_question(p019, engine.assess(p019))
+
+    if found is not None and best is not None:
+        print(f"    asked at intake       t={intake:<5} ->  "
+              f"{best.highest_band.word} at t={intake}")
+        print(f"    discovered by clock   t={found.change_occurred_at:<5} ->  "
+              f"{found.final_band.word} at t={found.at_minute}")
+        print()
+        print(f"  {found.at_minute - intake} minutes, for a "
+              f"{best.question.cost_seconds:.0f}-second question. That is the")
+        print("  number for the slide, and it is only computable because Phase")
+        print("  10 built something that could measure the alternative.")
+
+    print("\n  ONE HONEST PROBLEM WITH OUR OWN DATA")
+    fired = sum(1 for q in qe.bank if any(q.applies_to(p) for p in patients))
+    print(f"  {fired} of {len(qe.bank)} questions in the bank ever fire on this roster.")
+    print("  The two that never fire are not broken -- they never fire because")
+    print("  our synthetic patients ARRIVE with complete symptom lists. P006")
+    print("  volunteers that she struck her head; P005's parent has already")
+    print("  reported poor feeding. Real patients do not do this. They answer")
+    print("  the question they were asked and no more.")
+    print()
+    print("  So this roster systematically understates what a questioner is")
+    print("  worth, and the honest version of the Phase 2 data would author")
+    print("  patients with things they have not mentioned yet. Worth fixing")
+    print("  before Round 2, and worth saying first if a judge notices.")
+
+
 def show_rules(engine, patients):
     rule("THE SAFETY GUARD  --  every firing on the board")
     scored = [(p, engine.assess(p)) for p in patients]
@@ -896,6 +1045,13 @@ def main():
     if args and args[0] == "--confidence":
         show_confidence_board(engine, load_patients())
         return
+    if args and args[0] == "--questions":
+        show_questions(engine, load_patients())
+        return
+    if args and args[0] == "--ask":
+        pid = args[1] if len(args) > 1 else "P019"
+        show_ask(engine, load_patient(pid))
+        return
     if args and args[0] == "--clock":
         show_clock(engine)
         return
@@ -946,58 +1102,77 @@ def main():
     show_staleness(engine, load_patient("P002"))
     show_clock(engine)
     show_latency(engine)
+    show_questions(engine, patients)
+    show_ask(engine, load_patient("P016"))
 
-    rule("PHASE 10 RESULT  --  triage stops being a snapshot")
-    print("  Every phase before this one scored a patient at a moment, and")
-    print("  every demo had to hand it the moment. simulation/clock.py is the")
-    print("  component that decides on its own when to look, which is the")
-    print("  difference between a scoring function and a triage system.")
+    rule("PHASE 11 RESULT  --  a gap becomes a task")
+    print("  Since Phase 5 every assessment has carried a confidence figure")
+    print("  with a named dominant driver. P016 has sat at 18% baseline")
+    print("  knowledge for six phases while the system said, very honestly and")
+    print("  completely uselessly, that it could not tell whether her face had")
+    print("  changed. Naming a gap is not closing one.")
     print()
-    print("  Three kinds of event: a patient arrives, the world changes, a")
-    print("  reassessment falls due. The third is the phase. Over one simulated")
-    print("  shift the roster produced 242 assessments and 3 band changes, and")
-    print("  all three escalations were found at a scheduled reassessment --")
-    print("  nobody handed the system new data and asked it to think again.")
+    print("  core/questions.py closes them, by answering one question about the")
+    print("  questions: of everything we could ask, which one is worth asking?")
     print()
-    print("  THE LOOP CLOSES ON ITSELF. A reassessment interval is a property")
-    print("  of the current band, and the band is the output of the assessment")
-    print("  the reassessment produces. Because the ratchet means an automated")
-    print("  path can only RAISE a band, an automated path can only SHORTEN the")
-    print("  loop. A deteriorating patient is looked at more often, and nothing")
-    print("  the machine can do by itself makes it look less often. Neither")
-    print("  mechanism has that property alone.")
+    print("  VALUE IS MEASURED IN DECISIONS, NOT IN INFORMATION. The obvious")
+    print("  ranking is by confidence gained, and it is the wrong objective. A")
+    print("  question that takes a patient from 72% to 95% and leaves them in")
+    print("  the same band has tidied our records; it has not changed anything")
+    print("  about their care. So questions are ranked on whether any answer")
+    print("  could move the band, confidence is secondary, and cost can demote")
+    print("  a question but never rescue one that changes no decision.")
     print()
-    print("  A CHANGE IS NOT AN OBSERVATION. The first working version of the")
-    print("  clock scored the instant a trajectory event fired, and produced a")
-    print("  better demo than the correct version does. It had quietly given")
-    print("  the system a sensor no waiting room has, and made its own")
-    print("  reassessment schedule decorative -- a schedule that can never")
-    print("  discover anything is not a schedule. Now a change alters the")
-    print("  patient and the next scheduled look is what finds it, so detection")
-    print("  latency is a number we can print instead of a thing we hope about.")
+    print("  P024 is the check on that. He holds the LOWEST confidence on the")
+    print("  board and the questioner has nothing to ask him, because he is")
+    print("  already at CODE. An information-maximising questioner would have")
+    print("  gone straight to the sickest patient in the department to improve")
+    print("  its records.")
     print()
-    print("  WAITING DOES NOT MAKE A PATIENT SICKER. No wait-time term exists")
-    print("  in core/, and the clock never passes a wait duration to the")
-    print("  engine. Risk stays flat while confidence decays, because what")
-    print("  waiting changes is the age of our picture, not the patient. P017")
-    print("  is in the roster to prove it: re-scored seven times, moves")
-    print("  nowhere. 22 of 24 patients do not move at all.")
+    print("  DIRECTION IS PRICED. An answer that could reveal a patient is")
+    print("  sicker changes what happens today. An answer that could only")
+    print("  propose a LOWER band changes nothing on its own, because the")
+    print("  ratchet holds a waiting patient where they are -- its worth is in")
+    print("  handing a nurse documented grounds for a review. Real, and priced")
+    print("  at a fraction. That is also the answer to what the questioner does")
+    print("  for P016: it cannot move her, it can only let somebody move her.")
     print()
-    print("  Still missing: the adaptive questions (11) that close the gaps")
-    print("  Phase 5 has been naming since P016 first showed up at 18% baseline")
-    print("  knowledge, and the dashboard (12) -- which now has a real problem")
-    print("  to solve, because --timeline shows P014 sitting at PULL through")
-    print("  eighteen identical reassessments with nobody coming to see her,")
-    print("  and the queue has no way to say so.")
+    print("  IT IS NOT EXPECTED VALUE OF INFORMATION, and we do not call it")
+    print("  that. Textbook VOI weights each outcome by the probability of that")
+    print("  answer, and we have no such probabilities -- nothing here is")
+    print("  calibrated against real patients, so any prior over how a patient")
+    print("  is likely to answer would be invented, and it would be the")
+    print("  invented number driving the whole ranking. We compute the RANGE of")
+    print("  outcomes instead: a question is valuable if SOME answer changes")
+    print("  the band. Deliberately biased toward asking, and the interface is")
+    print("  expectation-shaped so a calibrated answer model drops in later.")
     print()
-    print("  ALL VALUES ARE SIMULATED and clinically unvalidated. The clock")
-    print("  fires every reassessment exactly when due, which no real")
-    print("  department achieves; our timeline is the optimistic case and")
-    print("  Phase 14 is where that assumption gets stressed. Nothing arrives")
-    print("  that was not authored -- there is no arrival generator and no")
-    print("  random deterioration -- so this file cannot tell you anything")
-    print("  about throughput.\n")
-
+    print("  ONE EARLIER CLAIM RETRACTED. Phase 5 said the largest confidence")
+    print("  penalty would be the best question to ask next. P019 is the")
+    print("  counterexample: her dominant driver is agreement, and the only")
+    print("  question that can move her band addresses completeness. The")
+    print("  docstring in core/schema.py has been corrected rather than left to")
+    print("  age quietly. Uncertainty says where our picture is thin; it does")
+    print("  not say where a decision is fragile.")
+    print()
+    print("  WHAT IT IS WORTH. P019 asked at intake reaches PULL at t=68. Left")
+    print("  to the clock, the same fact arrives on its own at t=74 and is")
+    print("  found at the next scheduled look, t=98. Thirty minutes, for a")
+    print("  fifteen-second question -- and only measurable because Phase 10")
+    print("  built the thing that measures the alternative.")
+    print()
+    print("  Still missing: the dashboard (12), which now has two real problems")
+    print("  to solve rather than a rendering exercise -- P014 sitting at PULL")
+    print("  through eighteen identical reassessments with nobody coming, and a")
+    print("  question queue that has to be shown to a nurse without becoming an")
+    print("  interrogation script.")
+    print()
+    print("  ALL VALUES ARE SIMULATED and clinically unvalidated. The question")
+    print("  bank is ten illustrative prompts that no clinician has reviewed,")
+    print("  and it is NOT a screening instrument. Two of the ten never fire on")
+    print("  this roster, because our synthetic patients arrive volunteering")
+    print("  everything -- real ones answer the question they were asked and no")
+    print("  more, so these figures understate what a questioner is worth.\n")
 
 
 if __name__ == "__main__":
