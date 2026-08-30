@@ -159,13 +159,40 @@ class EmergencyGate:
     def __init__(self, config: Optional[dict] = None):
         self.cfg = config or _load(EMERGENCY_CONFIG)
         self.settings = self.cfg.get("settings", {})
+        markers = self.cfg.get("context_markers", {})
+        self.negation_markers: List[str] = markers.get("negation", [])
+        # Negation that trails the phrase ("... was ruled out") rather than
+        # leading it. Checked over the whole clause, unlike `negation_markers`
+        # above, which is checked only on the prefix so it can never match
+        # inside a trigger phrase that already contains a negative word
+        # ("not breathing", "cant breathe").
+        self.negation_trailing_markers: List[str] = markers.get(
+            "negation_trailing", [])
+        self.historical_markers: List[str] = markers.get("historical", [])
+        self.hypothetical_markers: List[str] = markers.get("hypothetical", [])
+        self.third_person_markers: List[str] = markers.get("third_person", [])
+        self.clause_breaks: List[str] = self.cfg.get(
+            "clause_breaks", [",", ";", ".", " and ", " but ", " so "])
+        # Reset per evaluate() call. Not used for scoring -- purely so a
+        # debug view or the nurse notes can show WHY a phrase that appears in
+        # the transcript did not fire, which section 9/25 of the brief asks
+        # for explicitly: an emergency decision trace, not a silent drop.
+        self.last_suppressions: List[Dict[str, str]] = []
 
     # -- helpers -----------------------------------------------------------
 
     @staticmethod
     def _normalise(text: str) -> str:
+        """
+        Lowercase and strip most punctuation, but keep clause boundaries
+        (comma, semicolon, full stop) intact. Layer 5 (context/negation)
+        needs to know where one clause ends and the next begins; collapsing
+        "I am not having a heart attack, my headache is what brought me in"
+        into one run-on string would let a negation marker in the first
+        clause suppress a genuine complaint in the second.
+        """
         t = (text or "").lower().replace("'", "").replace("\u2019", "")
-        t = re.sub(r"[^a-z0-9\s]", " ", t)
+        t = re.sub(r"[^a-z0-9,;.\s]", " ", t)
         return " " + re.sub(r"\s+", " ", t).strip() + " "
 
     @staticmethod
@@ -181,6 +208,61 @@ class EmergencyGate:
             hi += 1
         return text[lo:hi].strip()
 
+    def _clause_span(self, text: str, index: int) -> "tuple[int, int]":
+        """The [start, end) of the clause index falls inside."""
+        start = 0
+        for marker in self.clause_breaks:
+            pos = text.rfind(marker, 0, index)
+            if pos != -1:
+                start = max(start, pos + len(marker))
+        end = len(text)
+        for marker in self.clause_breaks:
+            pos = text.find(marker, index)
+            if pos != -1:
+                end = min(end, pos)
+        return start, end
+
+    def _context_state(self, text: str, index: int) -> "tuple[str, str]":
+        """
+        Classify the clause a match sits in as CURRENT, or one of the reasons
+        it should not be trusted as a current, first-person emergency:
+        NEGATED, HISTORICAL, HYPOTHETICAL, THIRD_PERSON.
+
+        Returns (state, matched_marker). Negation is judged only on the
+        clause BEFORE the match -- so "not breathing" still fires, because
+        the negation word is inside the trigger phrase itself, not in front
+        of it. Historical and hypothetical markers are judged over the whole
+        clause, because they usually trail the symptom ("... five years
+        ago"), not lead it.
+        """
+        prefix_start, clause_end = self._clause_span(text, index)
+        prefix = text[prefix_start:index]
+        clause = text[prefix_start:clause_end]
+
+        for marker in self.negation_markers:
+            if marker in prefix:
+                return "negated", marker.strip()
+        for marker in self.negation_trailing_markers:
+            if marker in clause:
+                return "negated", marker.strip()
+        for marker in self.third_person_markers:
+            if marker in prefix:
+                return "third_person", marker.strip()
+        for marker in self.historical_markers:
+            if marker in clause:
+                return "historical", marker.strip()
+        for marker in self.hypothetical_markers:
+            if marker in clause:
+                return "hypothetical", marker.strip()
+        return "current", ""
+
+    def _record_suppression(self, trigger_id: str, phrase: str, state: str,
+                            marker: str, evidence: str) -> None:
+        self.last_suppressions.append({
+            "trigger_id": trigger_id, "phrase": phrase, "reason": state,
+            "marker": marker, "evidence": evidence,
+        })
+
     # -- layer 1: the patient's own words ----------------------------------
 
     def spoken(self, text: str, at_second: float = 0.0) -> List[Trigger]:
@@ -188,12 +270,19 @@ class EmergencyGate:
         out: List[Trigger] = []
         for rule in self.cfg.get("spoken_triggers", []):
             for phrase in rule["phrases"]:
-                if phrase in norm:
-                    out.append(Trigger(
-                        trigger_id=rule["id"], layer="spoken", why=rule["why"],
-                        evidence=self._quote(norm, phrase).strip(),
-                        at_second=at_second))
+                at = norm.find(phrase)
+                if at == -1:
+                    continue
+                state, marker = self._context_state(norm, at)
+                evidence = self._quote(norm, phrase).strip()
+                if state != "current":
+                    self._record_suppression(rule["id"], phrase, state,
+                                             marker, evidence)
                     break
+                out.append(Trigger(
+                    trigger_id=rule["id"], layer="spoken", why=rule["why"],
+                    evidence=evidence, at_second=at_second))
+                break
         return out
 
     # -- layer 1b: catastrophic mechanism ----------------------------------
@@ -210,13 +299,19 @@ class EmergencyGate:
         out: List[Trigger] = []
         for rule in self.cfg.get("mechanism_triggers", []):
             for phrase in rule["phrases"]:
-                if phrase in norm:
-                    out.append(Trigger(
-                        trigger_id=rule["id"], layer="mechanism",
-                        why=rule["why"],
-                        evidence=self._quote(norm, phrase).strip(),
-                        at_second=at_second))
+                at = norm.find(phrase)
+                if at == -1:
+                    continue
+                state, marker = self._context_state(norm, at)
+                evidence = self._quote(norm, phrase).strip()
+                if state != "current":
+                    self._record_suppression(rule["id"], phrase, state,
+                                             marker, evidence)
                     break
+                out.append(Trigger(
+                    trigger_id=rule["id"], layer="mechanism",
+                    why=rule["why"], evidence=evidence, at_second=at_second))
+                break
         return out
 
     def severity_language(self, text: str, at_second: float = 0.0) -> List[Trigger]:
@@ -239,11 +334,18 @@ class EmergencyGate:
             if at == -1:
                 continue
             window = norm[max(0, at - 70):at + 70]
-            if any(anchor in window for anchor in anchors):
-                return [Trigger(
-                    "S1_extreme_severity_language", "severity",
-                    "patient describes this at the top of their own scale",
-                    self._quote(norm, word).strip(), at_second)]
+            if not any(anchor in window for anchor in anchors):
+                continue
+            evidence = self._quote(norm, word).strip()
+            state, marker = self._context_state(norm, at + 1)
+            if state != "current":
+                self._record_suppression("S1_extreme_severity_language", word,
+                                         state, marker, evidence)
+                continue
+            return [Trigger(
+                "S1_extreme_severity_language", "severity",
+                "patient describes this at the top of their own scale",
+                evidence, at_second)]
         return []
 
     # -- layer 2: objective observations -----------------------------------
@@ -347,6 +449,7 @@ class EmergencyGate:
         would mean a patient saying "I can't breathe" in a room with no
         monitoring does not trigger, and that is the exact patient this is for.
         """
+        self.last_suppressions = []
         found: List[Trigger] = []
         found += self.spoken(text, at_second)
         found += self.mechanism(text, at_second)

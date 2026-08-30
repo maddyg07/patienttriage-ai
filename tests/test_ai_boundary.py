@@ -155,14 +155,24 @@ class TestTheModelProviderDegradesRatherThanFails(ClaimTest):
         scoreable = set(_load(WEIGHTS_FILE)["symptoms"].keys())
         self.assertEqual(set(AnthropicProvider(api_key="").vocabulary), scoreable)
 
-    def test_a_term_outside_the_vocabulary_is_dropped_and_reported(self):
+    def test_a_term_outside_the_vocabulary_is_kept_but_not_scored(self):
         """
         A finding the model saw that the engine has no weight for is a gap in
-        the weights file. Dropping it silently would make the vocabulary look
-        complete when it is not.
+        the WEIGHTS FILE, not a gap in what the model understood.
+
+        Phase 21 changed this. The previous version returned None for such a
+        term, which discarded a genuinely recognised clinical concept before
+        any human saw it -- the exact "unknown concept = discard it" behaviour
+        the project set out to eliminate. It is now kept, marked
+        `scoreable=False`, and reported; the engine still scores only against
+        its own weight keys, so the number is unchanged.
         """
         provider = AnthropicProvider(api_key="x")
         built = provider._build(
             {"symptoms": [{"term": "chest pain"}, {"term": "hemoptysis"}]}, {})
-        self.assertEqual(built.terms(), ["chest pain"])
+
+        self.assertEqual(built.terms(), ["chest pain", "hemoptysis"],
+                        "a recognised concept was discarded at the boundary")
+        self.assertEqual(built.scoreable_terms(), ["chest pain"])
+        self.assertEqual(built.unscoreable_terms(), ["hemoptysis"])
         self.assertIn("hemoptysis", built.note)

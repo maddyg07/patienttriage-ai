@@ -268,13 +268,31 @@ class HTTPModelProvider(LanguageProvider):
         dropped: List[str] = []
 
         def make(entry: dict, negated: bool = False) -> Optional[ExtractedSymptom]:
+            """
+            Build a symptom for ANY term the model recognised, scoreable or
+            not.
+
+            Phase 21: this used to `return None` for a term outside
+            `allowed`, which is a silent-discard bug wearing a docstring --
+            the model had genuinely recognised a clinical concept
+            ("hemoptysis", "syncope", a phrasing nobody wrote a weight for
+            yet) and the system threw it away rather than showing it to a
+            nurse. A recognised-but-unscored concept is a gap in
+            data/risk_weights.json, and the correct response to a gap is to
+            surface it, not to pretend it was never seen. `scoreable=False`
+            is that surfacing: the risk engine only ever scores against its
+            own weight keys, so an unscored term contributes zero to the
+            number exactly as before -- nothing about the score changes,
+            only what the nurse gets to see.
+            """
             if not isinstance(entry, dict):
                 return None
             term = str(entry.get("term", "")).strip().lower()
-            if term not in allowed:
-                if term:
-                    dropped.append(term)
+            if not term:
                 return None
+            scoreable = term in allowed
+            if not scoreable:
+                dropped.append(term)
             return ExtractedSymptom(
                 term=term,
                 normalised=str(entry.get("normalised") or term),
@@ -293,7 +311,8 @@ class HTTPModelProvider(LanguageProvider):
                 negated=negated,
                 uncertain=bool(entry.get("uncertain")),
                 confidence=_clamp(entry.get("confidence", 0.75)),
-                source=source, at_second=at_second)
+                source=source, at_second=at_second,
+                scoreable=scoreable)
 
         symptoms = [s for s in (make(e) for e in raw.get("symptoms") or []) if s]
         denials = [s for s in (make(e, True) for e in raw.get("denials") or []) if s]
@@ -319,7 +338,8 @@ class HTTPModelProvider(LanguageProvider):
 
         note = ""
         if dropped:
-            note = ("outside the scoreable vocabulary and therefore not counted: "
+            note = ("recognised but outside the scoreable vocabulary (shown "
+                    "to the nurse, not counted in the score): "
                     + ", ".join(sorted(set(dropped))))
 
         return Extraction(
@@ -384,7 +404,7 @@ class GeminiProvider(HTTPModelProvider):
     # Flash and Flash-Lite are the models on Google's free tier. Free-tier
     # model availability moves; if this 404s, PATIENTTRIAGE_MODEL overrides it
     # and ai.google.dev/gemini-api/docs/models has the current list.
-    default_model = "gemini-3.6-flash"
+    default_model = "gemini-2.5-flash"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

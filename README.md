@@ -92,7 +92,23 @@ patient who cannot answer is routed to collateral sources rather than skipped.
 
 ## Status
 
-Built in phases. Currently at **Phase 16 — docs and privacy**.
+Built in phases. Currently at **Phase 21 — multimodal honesty and
+false-positive correction**.
+
+> **Reconciliation note.** Until Phase 21 this section claimed Phase 16, which
+> had been wrong for some time: `core/ai/`, `core/session.py`,
+> `app/intake.py`, `app/nurse.py` and `core/capture_fusion.py` all exist and
+> are tested, and none of them is Phase 16 work. The table below was rebuilt
+> by reading the repository rather than by trusting the previous table.
+>
+> Phases 1–17 carry explicit markers in module docstrings and are recorded
+> here from those. **Phases 18–20 left no in-code markers at all** — they
+> survive only as archive filenames (`…-phase20d.zip`) and in the build
+> conversation. Rather than invent numbered phases to fill the gap, the work
+> that demonstrably landed in that window is listed as one grouped row,
+> described by the artefacts that exist. If you know which of those changes
+> belonged to which phase, that is a correction worth making; this table does
+> not guess.
 
 | Phase | | Status |
 |---|---|---|
@@ -112,7 +128,90 @@ Built in phases. Currently at **Phase 16 — docs and privacy**.
 | 14 | Surge mode | done |
 | 15 | Test suite | done |
 | 16 | Docs & privacy | done |
-| 17 | Demo mode | next |
+| 17 | Live intake console | done |
+| 17b | Capture fusion — neither sensor decides alone | done |
+| 17c | Narrative reader — site + sensation extraction | done |
+| 18–20 | *(unnumbered in code)* AI provider layer (`core/ai/`), shared `ClinicSession` state with patient↔nurse sync, nurse console, free-tier provider support | done, markers absent |
+| 21 | Context-aware emergency gate, concept preservation, evidence-based contradictions, multimodal harness | done |
+
+### What Phase 21 changed
+
+Four root causes, each fixed and each pinned by tests.
+
+**1. The emergency gate had no context.** `spoken()`, `mechanism()` and
+`severity_language()` did plain substring matching on the transcript. A
+negation-aware extractor already existed in `core/narrative.py` — the gate
+simply never used it. So "I am **not** having a heart attack", "**my father**
+had a heart attack last year", "**if someone** had a heart attack, what would
+it feel like" and "I had a heart attack **five years ago** but I'm here for a
+headache" all declared emergencies. The gate now classifies the clause around
+every match as current, negated, historical, hypothetical or third-person, and
+acts only on *current*. Markers live in `data/emergency_config.json`; the
+classifier can only ever **suppress**, never add, so it cannot cost a
+detection. Suppressions are recorded in `gate.last_suppressions` rather than
+dropped silently — a phrase the gate declined to act on is still a fact about
+the encounter. `tests/test_emergency_context.py`.
+
+**2. Recognised concepts were being discarded.** `core/ai/model_provider.py`
+prompted the model with an `ALLOWED TERMS` list built from
+`data/risk_weights.json` and then filtered the reply against the same list,
+returning `None` for anything outside it. A model that correctly understood
+"coughing up blood" as hemoptysis produced *nothing*, because no weight had
+been written for hemoptysis. The nurse never saw the word. Terms outside the
+vocabulary are now kept, flagged `scoreable=False`, logged under their own
+`unscored_concept` event kind, and broken out in the session snapshot for the
+nurse. The score is deliberately unchanged: `_payload()` still passes only
+weighted terms to the engine, so an unscored concept contributes the same zero
+it did before. The fix makes the gap in the weights file **visible**; it does
+not paper over it by inventing a number nobody calibrated.
+`tests/test_unscored_concepts.py`.
+
+**3. One frame was enough to contradict a patient.**
+`_check_contradiction` asked whether *any* qualifying observation existed in
+the twelve-second window. A single frame of apparent grimacing — a blink, a
+head turn, a compression artefact — landing near "I'm fine" produced a logged
+contradiction against the patient. A discrepancy now requires either
+**corroboration** (both channels disagree independently) or **persistence**
+(one channel, but repeated, or already marked persistent by whatever produced
+it). Anything weaker is logged as a `transient_candidate` and dropped, so the
+stage is visibly shown to have run and decided *no*. Unchanged, and load
+bearing: a contradiction is still a review flag, never an emergency, never
+stops questioning, and never says anything about the patient's honesty.
+`tests/test_contradiction_evidence.py`.
+
+**4. You could not tell which stages were reasoning.** The complaint that
+opened this phase was that analysis *appeared* to be happening in stages that
+were only collecting measurements. `scripts/run_harness.py` replays scripted
+multimodal encounters and labels every stage **ANALYSED**, **MEASURED**,
+**NOT RUN** or **NO INPUT**, with a reason. A stage that returns nothing
+because it was never given input now looks different from one that examined
+its input and found nothing.
+
+```bash
+python -m scripts.run_harness --list
+python -m scripts.run_harness negation flicker discrepancy
+```
+
+### What Phase 21 did *not* do, and why
+
+The brief asked for autonomous facial and audio analysis: real frame
+extraction, landmarks, temporal aggregation, acoustic feature extraction,
+streaming speech recognition.
+
+**That was not built, and nothing in this repository pretends it was.** The
+honest position is the one the brief itself insists on: *do not confuse a
+sensor being ON with a sensor actually being ANALYSED*. What exists today is
+`core/capture_fusion.py`, which is a genuine quality-gating and
+cross-corroboration layer over numbers measured in the browser — and it is a
+real, tested piece of reasoning. It is not a facial or acoustic **model**, and
+the harness prints `MEASURED`, not `ANALYSED`, for those two stages precisely
+so that the limitation is visible in the tool instead of discovered on stage.
+
+Building the real thing needs frame-level capture and an audio feature
+pipeline that this repository does not have. Adding confidence numbers to the
+current measurements to make them look like model output would satisfy the
+acceptance checklist and would be exactly the failure this project has avoided
+everywhere else.
 
 ## Live intake — camera, microphone, voice
 
@@ -1265,6 +1364,68 @@ anywhere from 75% to 100% and she is still the only patient who fires it, and
 below 75% nobody does. Confidence is not what selects her — the requirement for
 an *unresolved concerning finding* is, and she is the only patient on the board
 who has one.
+
+## Known limitations
+
+Written plainly, because a limitations section that reads like marketing is
+worse than none.
+
+**Status.** A student prototype on entirely synthetic data. No clinical
+validation, no clinician review of any rule, threshold or weight, no real
+patients, no real outcomes. Every number in `data/` is a simulated
+demonstration value.
+
+**Facial inference.** There is no facial model in this repository. There is a
+symmetry index measured in the browser and a quality-gating layer that rejects
+readings taken under conditions which make them meaningless. It cannot
+distinguish a droop from a shadow, a head turn or an off-centre sitting
+position with any reliability, and it is not a stroke detector. Appearance
+alone cannot diagnose anything, and the module is built so that appearance
+never earns points — only *change from a known baseline* does.
+
+**Audio inference.** There is no acoustic model either. Pause counts, phrase
+durations and a signal-to-noise estimate are measurements, not voice analysis.
+They cannot distinguish breathlessness from a thoughtful pause, a short
+answer, a bad microphone or a second language. Voice alone cannot diagnose
+anything.
+
+**Speech recognition.** Browser speech recognition, which is Chrome/Edge only,
+degrades badly on accents it was not trained for — including Indian English,
+the accent most of our users would have — and produces confident nonsense
+rather than errors. Every recognised term is shown back for correction for
+this reason.
+
+**Language models.** A general-purpose LLM is not a clinical instrument. It
+was not trained or validated for triage, it can be wrong fluently, and it can
+be talked into things. This is why it may only extract and interpret, never
+set a band, score or disposition — enforced at the boundary by
+`reject_clinical_verdicts()` and pinned by `tests/test_ai_boundary.py`. When
+no provider is available, the deterministic matcher serves and the console
+says so.
+
+**Environment.** Lighting, camera placement, background noise, microphone
+quality and how far the patient sits from the laptop all change the
+measurements more than most clinical variation would. None of this is
+controlled.
+
+**Demographic bias.** Untested, and the risk is real and directional. A
+symmetry index computed on facial geometry will not behave identically across
+face shapes; speech features will not behave identically across accents,
+genders and ages. The baseline-aware design exists specifically to stop
+appearance becoming risk, and `fairness_counterfactual()` proves that a
+documented difference scores the same whatever caused it — but that is one
+property, tested on synthetic patients, not a fairness audit.
+
+**Context handling is lexical.** The Phase 21 negation, history, hypothetical
+and third-person detection is marker lists over clauses. It will miss shapes
+nobody wrote down, and it can misfire on unusual sentence structure. It can
+only suppress, so a miss costs a false positive rather than a missed
+emergency — but it is not semantic understanding.
+
+**Human oversight is not optional.** Nothing here decides anything. The system
+proposes; a nurse disposes, can override any finding with a logged reason, and
+remains clinically responsible. Every claim in this file is about what reaches
+a human faster, not about what the software concludes.
 
 ## What this prototype does not claim
 

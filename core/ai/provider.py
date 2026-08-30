@@ -89,6 +89,12 @@ class ExtractedSymptom:
     confidence: float = 0.5                 # extraction confidence, not clinical
     source: str = "speech"                  # speech | typed | nurse
     at_second: float = 0.0
+    scoreable: bool = True                  # False: a recognised clinical
+                                             # concept the model extracted
+                                             # that data/risk_weights.json has
+                                             # no weight for yet. Recognised,
+                                             # not discarded -- see
+                                             # core/ai/model_provider.py.
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -126,7 +132,21 @@ class Extraction:
         }
 
     def terms(self) -> List[str]:
+        """Every recognised term, scoreable or not. See `scoreable_terms`."""
         return [s.term for s in self.symptoms]
+
+    def scoreable_terms(self) -> List[str]:
+        """Only the terms data/risk_weights.json has a weight for."""
+        return [s.term for s in self.symptoms if s.scoreable]
+
+    def unscoreable_terms(self) -> List[str]:
+        """
+        Recognised clinical concepts with no scoring rule yet -- a gap in the
+        weights file, not a gap in what the model saw. Phase 21: these used
+        to be silently dropped at the provider boundary. They now reach the
+        ledger and the nurse's screen, flagged for review, instead.
+        """
+        return [s.term for s in self.symptoms if not s.scoreable]
 
 
 # Keys a provider must never return. Checked at the boundary on every call, so

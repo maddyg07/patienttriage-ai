@@ -61,6 +61,12 @@ from core.uncertainty import explain_confidence
 
 MULTIMODAL_WINDOW_SECONDS = 12.0
 
+# How many times an observed signal has to appear inside that window before it
+# counts as sustained rather than as a flicker. Phase 21: without this, one
+# frame of apparent grimacing against "I'm fine" produced a contradiction.
+# A SIMULATED DEMONSTRATION VALUE, not a measurement standard.
+MIN_PERSISTENT_OBSERVATIONS = 2
+
 STATUS_ORDER = ["normal", "monitoring", "concerning", "high risk", "emergency"]
 
 BAND_TO_STATUS = {
@@ -131,6 +137,13 @@ class LedgerEntry:
     removed_by: str = ""
     added_by: str = ""
     provider: str = ""
+    scoreable: bool = True
+    # False when the extractor recognised a real clinical concept that
+    # data/risk_weights.json has no weight for. Phase 21: these used to be
+    # discarded at the provider boundary. They are now carried here, shown to
+    # the nurse, and flagged for review -- but deliberately kept out of the
+    # scoring payload, because inventing a weight for an unweighted concept
+    # would be worse than admitting the gap.
 
     @property
     def severity(self) -> Optional[int]:
@@ -159,6 +172,8 @@ class LedgerEntry:
             "uncertain": self.uncertain, "removed_by": self.removed_by,
             "added_by": self.added_by, "provider": self.provider,
             "active": self.active, "overridden": self.overridden,
+            "scoreable": self.scoreable,
+            "needs_review": self.active and not self.scoreable,
         }
 
 
@@ -437,10 +452,21 @@ class ClinicSession:
             progression=symptom.progression, associated=list(symptom.associated),
             confidence=symptom.confidence, source=symptom.source,
             first_at_second=at_second, uncertain=symptom.uncertain,
-            provider=provider)
+            provider=provider,
+            scoreable=getattr(symptom, "scoreable", True))
         self.ledger[symptom.term] = entry
-        self._log("symptom", f"{entry.normalised} detected", at_second,
-                  detail=entry.as_dict())
+        if entry.scoreable:
+            self._log("symptom", f"{entry.normalised} detected", at_second,
+                      detail=entry.as_dict())
+        else:
+            # A distinct event type, on purpose. "We understood this and have
+            # no calibrated rule for it" is a different fact from "we scored
+            # this", and an audit log that blurs the two makes the weights
+            # file look more complete than it is.
+            self._log("unscored_concept",
+                      f"{entry.normalised} recognised but has no scoring rule; "
+                      f"nurse review required", at_second,
+                      detail=entry.as_dict())
 
     # -- emergency ---------------------------------------------------------
 
@@ -465,11 +491,34 @@ class ClinicSession:
 
     def _check_contradiction(self, text: str, at_second: float) -> None:
         """
-        Self-report against observation, inside the time window.
+        Self-report against observation, inside the time window, and only when
+        the observation PERSISTED.
 
-        Both observed channels must disagree, and both must have been recorded
-        within MULTIMODAL_WINDOW_SECONDS of the statement. A visual observation
-        from forty seconds ago is not evidence about what the patient just said.
+        Three conditions, all required:
+
+          1. The patient actually made a denial-of-distress statement. A
+             patient who says "I'm in pain" while looking composed is not
+             contradicting anything -- people feel pain without displaying it,
+             and treating a neutral face as evidence against a reported
+             symptom is how a system starts disbelieving patients.
+
+          2. Both observed channels disagree, within MULTIMODAL_WINDOW_SECONDS.
+             A visual observation from forty seconds ago is not evidence about
+             what the patient just said.
+
+          3. NEW IN PHASE 21 -- the disagreement persisted. `recent()`
+             previously returned True on a SINGLE observation anywhere in the
+             window, so one frame of grimacing (someone blinking into a
+             webcam, a head turn, a compression artefact) against "I'm fine"
+             produced a logged contradiction. That is the single-frame
+             contradiction the brief calls out: a transient candidate treated
+             like a sustained finding. A finding now has to appear at least
+             MIN_PERSISTENT_OBSERVATIONS times in the window, or be explicitly
+             marked persistent by whatever produced it, before it counts as
+             disagreement.
+
+        The output is still a REVIEW FLAG and still never says the patient is
+        lying. It reports that two channels disagree and asks a human to look.
         """
         norm = text.lower()
         said_fine = any(p in norm for p in (
@@ -479,22 +528,76 @@ class ClinicSession:
         if not said_fine:
             return
 
-        def recent(entries) -> bool:
-            return any(abs(e["at_second"] - at_second) <= MULTIMODAL_WINDOW_SECONDS
-                       and e.get("status") != "dismissed" for e in entries)
+        def in_window(entries) -> List[dict]:
+            return [e for e in entries
+                    if abs(e["at_second"] - at_second) <= MULTIMODAL_WINDOW_SECONDS
+                    and e.get("status") != "dismissed"]
 
-        visible = recent([e for e in self.visual_observations
-                          if e["kind"] in ("distress", "grimacing", "discomfort")])
-        audible = recent([e for e in self.audio_observations
-                          if e["kind"] in ("distress", "breathlessness", "strain")])
+        def persistent(entries) -> bool:
+            """
+            Sustained, not a flicker.
 
-        if not (visible or audible):
+            Either the producer already judged it persistent (a frame
+            aggregator that saw it in 8 of 10 frames sets persistence=True),
+            or we saw it repeatedly ourselves inside the window.
+            """
+            window = in_window(entries)
+            if any(e.get("persistence") is True
+                   or str(e.get("persistence", "")).lower() == "persistent"
+                   for e in window):
+                return True
+            return len(window) >= MIN_PERSISTENT_OBSERVATIONS
+
+        visual_window = in_window([e for e in self.visual_observations
+                                   if e["kind"] in ("distress", "grimacing",
+                                                    "discomfort")])
+        audio_window = in_window([e for e in self.audio_observations
+                                  if e["kind"] in ("distress", "breathlessness",
+                                                   "strain")])
+
+        visible = bool(visual_window)
+        audible = bool(audio_window)
+
+        # TWO WAYS FOR A DISAGREEMENT TO BE MEANINGFUL, and one way for it to
+        # be noise.
+        #
+        #   * CORROBORATED -- both channels independently disagree with the
+        #     statement. Two modalities failing the same way at the same time
+        #     is the pattern that matters, and a single observation in each is
+        #     already two independent witnesses. This is the brief's
+        #     "persistent distress + strained speech" case.
+        #
+        #   * SUSTAINED -- one channel, but it held. Repeated inside the
+        #     window, or marked persistent by whatever produced it.
+        #
+        #   * Anything else is a flicker: one channel, one blip. That is the
+        #     single-frame contradiction the brief rejects, and it is the case
+        #     that used to get through.
+        corroborated = visible and audible
+        sustained = persistent(visual_window) or persistent(audio_window)
+
+        if not (corroborated or sustained):
+            # Something may still have been seen -- just not enough of it.
+            # Recorded as a transient candidate rather than dropped, so a
+            # debug view can show that the stage ran and decided NO.
+            if visual_window or audio_window:
+                self._log("transient_candidate",
+                          "observed signal did not persist and was not "
+                          "corroborated; not treated as a contradiction",
+                          at_second,
+                          detail={"visual_seen": len(visual_window),
+                                  "audio_seen": len(audio_window),
+                                  "needed": MIN_PERSISTENT_OBSERVATIONS,
+                                  "statement": text})
             return
 
         self._log("contradiction",
                   "patient states they are fine; observed channels disagree",
                   at_second,
                   detail={"visual": visible, "audio": audible,
+                          "corroborated": corroborated, "sustained": sustained,
+                          "visual_observations": len(visual_window),
+                          "audio_observations": len(audio_window),
                           "window_seconds": MULTIMODAL_WINDOW_SECONDS,
                           "statement": text})
 
@@ -715,7 +818,11 @@ class ClinicSession:
             "arrival_minute": 0,
             "chief_complaint": (self.transcript[0]["text"][:140]
                                 if self.transcript else ""),
-            "added_symptoms": [e.term for e in active],
+            # Only weighted terms go to the engine. An unscored concept has no
+            # calibrated points, and passing it through would either do
+            # nothing (best case) or invite somebody to invent a weight for it
+            # later without noticing it was never validated.
+            "added_symptoms": [e.term for e in active if e.scoreable],
             "denied_symptoms": [t for t in self.denials
                                 if t not in {e.term for e in active}],
             "added_concerns": [c.get("concern") for c in self.concerns
@@ -798,6 +905,11 @@ class ClinicSession:
             "patient_message": (self.gate.patient_message
                                 if self.emergency.active else ""),
             "symptoms": [e.as_dict() for e in self.ledger.values()],
+            # Broken out as its own key so the nurse screen can render these
+            # separately, with their own caption, rather than mixing them in
+            # with findings that actually moved the score.
+            "unscored_concepts": [e.as_dict() for e in self.ledger.values()
+                                  if e.active and not e.scoreable],
             "denials": [e.as_dict() for e in self.denials.values()],
             "concerns": list(self.concerns),
             "baseline_hints": list(self.baseline_hints),
