@@ -35,8 +35,14 @@ import json
 from typing import Optional
 
 
-def render_patient(settings: Optional[dict] = None) -> str:
-    return _PAGE.replace("__SETTINGS__", json.dumps(settings or {}))
+def render_patient(settings: Optional[dict] = None,
+                   use_landmarks: bool = False) -> str:
+    from app.landmarks import landmark_script
+    settings = dict(settings or {})
+    settings["landmarks"] = bool(use_landmarks)
+    return (_PAGE
+            .replace("__SETTINGS__", json.dumps(settings))
+            .replace("/* __LANDMARK_SCRIPT__ */", landmark_script(use_landmarks)))
 
 
 _PAGE = r"""<!DOCTYPE html>
@@ -151,8 +157,11 @@ _PAGE = r"""<!DOCTYPE html>
 
 <script>
 const $ = id => document.getElementById(id);
+window.__USE_LANDMARKS__ = !!(S && S.landmarks);
+
+/* __LANDMARK_SCRIPT__ */
 let session = null, recog = null, stream = null, started = 0, listening = false;
-let camTimer = null, emergency = false;
+let camTimer = null, emergency = false, lastAsked = null, finished = false;
 
 function seconds(){ return started ? (Date.now() - started) / 1000 : 0; }
 
@@ -174,14 +183,25 @@ $("start").onclick = async () => {
   $("saidCard").style.display = "block";
   $("dot").classList.add("on");
 
+  /* Tell the server what actually ran. The uncertainty engine reported
+     "facial capture not attempted" on every encounter, including ones with
+     the camera live throughout, because nothing ever told it otherwise. */
+  const capture = {session_id: session};
   if(stream){
     $("cam").srcObject = stream;
-    camTimer = setInterval(scanFrame, 6000);
-    setTimeout(scanFrame, 1500);
+    capture.facial = stream.getVideoTracks().length ? "ok" : "failed";
+    capture.voice  = stream.getAudioTracks().length ? "ok" : "failed";
+    camTimer = setInterval(scanFrame, 9000);
+    setTimeout(scanFrame, 2000);
   }else{
     $("cam").style.display = "none";
     $("liveText").textContent = "Listening (camera not available)";
+    capture.facial = "refused";
+    capture.voice = "refused";
   }
+  fetch("/api/capture", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(capture)});
+  initLandmarks();
   startSpeech();
 };
 
@@ -236,11 +256,66 @@ function send(text, at){
     body: JSON.stringify({session_id: session, text, at_second: at})});
 }
 
-/* ---------- camera: periodic scan, measurements only ---------- */
-function scanFrame(){
+/* ---------- camera: a BURST per scan, with a real spread ----------
+   A single frame has no frame-to-frame spread, and the first version sent a
+   hardcoded 0.01 so the stability gate would always pass. That defeated the
+   gate entirely and let one noisy frame report facial asymmetry. Each scan is
+   now a burst of frames and the spread is what was actually measured. */
+async function scanFrame(){
   if(!stream) return;
+  /* Geometry when it is available, luminance otherwise. Geometry is better
+     because a landmark is a position and a position does not change when the
+     lighting does -- the whole side-lighting problem simply stops existing.
+     It still cannot say whether a difference is new. Nothing can, from an
+     image, which is why the baseline question stays exactly where it is. */
+  const readings = [];
+  const useGeometry = (landmarkState === "ready");
+  for(let i = 0; i < 7; i++){
+    const m = useGeometry ? measureLandmarks($("cam")) : measureOnce();
+    if(m) readings.push(m);
+    await new Promise(r => setTimeout(r, 110));
+  }
+  if(readings.length < 5){
+    /* Geometry found no face in the burst. Fall back rather than report
+       nothing: a patient looking away is not a reading, but a patient in
+       frame under bad light still is. */
+    if(useGeometry){
+      for(let i = 0; i < 7; i++){
+        const m = measureOnce();
+        if(m) readings.push(m);
+        await new Promise(r => setTimeout(r, 90));
+      }
+    }
+    if(readings.length < 5) return;
+  }
+  const method = readings[0].method || "luminance comparison";
+
+  const idx = readings.map(r => r.index).sort((a,b) => a-b);
+  const q = f => { const i = (idx.length-1)*f, lo = Math.floor(i), hi = Math.ceil(i);
+                   return lo === hi ? idx[lo] : idx[lo] + (idx[hi]-idx[lo])*(i-lo); };
+  const med = a => { const s2 = [...a].sort((x,y)=>x-y), m = s2.length>>1;
+                     return s2.length%2 ? s2[m] : (s2[m-1]+s2[m])/2; };
+
+  fetch("/api/frame", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({session_id: session, at_second: seconds(),
+      frames: readings.length,
+      method: method,
+      /* Geometry has no brightness, structure or lighting gradient, and those
+         gates exist to catch failure modes it does not have. Values that make
+         the fuser treat the reading as usable are sent only when the reading
+         genuinely came from geometry, and the method travels with it so the
+         server is never guessing which is which. */
+      brightness: med(readings.map(r => r.brightness ?? 128)),
+      structure:  med(readings.map(r => r.structure  ?? 0.30)),
+      gradient:   med(readings.map(r => r.roll !== undefined
+                                        ? r.roll : r.gradient)),
+      symmetry:   med(idx),
+      spread:     q(0.75) - q(0.25)})});
+}
+
+function measureOnce(){
   const v = $("cam");
-  if(!v.videoWidth) return;
+  if(!v.videoWidth) return null;
   const w = 320, h = Math.round(w * v.videoHeight / v.videoWidth);
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
@@ -253,7 +328,7 @@ function scanFrame(){
 
   const COLS = 12, ROWS = 14;
   const cw = Math.floor(rw/COLS), ch = Math.floor(rh/ROWS);
-  if(cw < 1 || ch < 1) return;
+  if(cw < 1 || ch < 1) return null;
   const grid = [], all = [];
   for(let cy = 0; cy < ROWS; cy++){
     const row = [];
@@ -269,7 +344,7 @@ function scanFrame(){
     grid.push(row);
   }
   const mean = all.reduce((a,b)=>a+b,0)/all.length;
-  if(mean <= 0) return;
+  if(mean <= 0) return null;
   const sd = Math.sqrt(all.reduce((a,v2)=>a+(v2-mean)*(v2-mean),0)/all.length);
 
   const colMean = [];
@@ -293,10 +368,9 @@ function scanFrame(){
 
   /* Measurements only. The page draws no conclusion from them; the server
      decides what they mean and whether they are usable at all. */
-  fetch("/api/frame", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({session_id: session, at_second: seconds(),
-      brightness: mean, structure: sd/mean, gradient: Math.abs(slope)*(COLS-1)/mean,
-      symmetry: pairs ? (diff/pairs)/mean : 0})});
+  return {brightness: mean, structure: sd/mean,
+          gradient: Math.abs(slope)*(COLS-1)/mean,
+          index: pairs ? (diff/pairs)/mean : 0};
 }
 
 /* ---------- shared state ---------- */
@@ -333,11 +407,40 @@ function render(s){
   }
 
   /* Questions stop the moment the gate fires. */
-  if(!s.emergency.active && s.next_question){
-    $("askCard").style.display = "block";
-    $("askText").textContent = s.next_question;
-  }else if(!s.next_question){
+  if(s.complete){
     $("askCard").style.display = "none";
+    $("liveText").textContent = "Thank you. A nurse has everything they need.";
+    if(!finished){ finished = true; $("stop").click(); }
+    return;
+  }
+  if(s.emergency.active || !s.next_question){
+    $("askCard").style.display = "none";
+    /* Nothing left worth asking and no emergency: the intake is done. The
+       previous version simply stopped responding here, with no question, no
+       message, and no end. */
+    if(!s.emergency.active && s.next_question_why === "exhausted" && !finished){
+      finished = true;
+      fetch("/api/finish", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({session_id: session,
+          reason: "no further question would change the assessment"})});
+    }
+    return;
+  }
+
+  $("askCard").style.display = "block";
+  $("askText").textContent = s.next_question;
+
+  /* Tell the server this question has now been ASKED. Without this the same
+     question is chosen forever: the patient answers, the transcript logs it,
+     and the screen never moves. That was the bug. */
+  if(s.next_question_id && s.next_question_id !== lastAsked){
+    lastAsked = s.next_question_id;
+    fetch("/api/asked", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({session_id: session,
+        question_id: s.next_question_id, text: s.next_question,
+        why: s.next_question_why || ""})});
   }
 }
 </script>

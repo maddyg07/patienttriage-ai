@@ -195,6 +195,10 @@ class ClinicSession:
         self.questions_asked: List[dict] = []
         # What the model suggested asking next, if a model served this turn.
         self.model_question: str = ""
+        self.pending_question: Optional[dict] = None
+        self.reported_pain: Optional[int] = None
+        self.complete: bool = False
+        self.completed_reason: str = ""
         self.nurse_notes_override = ""
         self.last_result: Dict = {}
         self.degraded = False
@@ -254,6 +258,7 @@ class ClinicSession:
         self.transcript.append({"text": text, "at_second": at_second,
                                 "at_clock": _clock(), "source": source})
         self._log("speech", text, at_second, actor="patient")
+        self._attach_answer(text, at_second)
 
         # 1. GATE FIRST, on the raw words, by rule, with no dependencies.
         #    Spoken phrases, catastrophic mechanism and extreme severity
@@ -318,6 +323,23 @@ class ClinicSession:
         self._broadcast()
         return entry
 
+    def set_capture(self, facial: Optional[str] = None,
+                    voice: Optional[str] = None) -> dict:
+        """
+        Record whether the camera and microphone actually ran.
+
+        The uncertainty engine said "facial capture not attempted" on every
+        single encounter, including ones where the patient had the camera on
+        the whole time, because nothing ever told the engine otherwise. A
+        confidence penalty for a missing modality is correct; charging it while
+        the modality is running is a lie in the audit trail.
+        """
+        if facial:
+            self.flags["facial_capture_status"] = facial
+        if voice:
+            self.flags["voice_capture_status"] = voice
+        return self.reassess(self._current_second())
+
     def set_observations(self, **kwargs) -> dict:
         """Vitals and observed flags. Runs the objective emergency layer."""
         for key, value in kwargs.items():
@@ -336,6 +358,19 @@ class ClinicSession:
     # -- absorbing an extraction -------------------------------------------
 
     def _absorb(self, extraction: Extraction, at_second: float) -> None:
+        # A pain score can arrive in any utterance, usually the one answering
+        # "how bad is it". The first version only read it alongside a symptom
+        # in the same sentence, so a patient who said "about an 8 out of 10"
+        # in reply to a question was still recorded as "pain score not
+        # obtained" -- the system asked, was answered, and did not listen.
+        if extraction.pain_score is not None:
+            self.reported_pain = extraction.pain_score
+            for entry in self.ledger.values():
+                if entry.active and entry.ai_severity is None:
+                    entry.ai_severity = extraction.pain_score
+            self._log("pain", f"pain reported as {extraction.pain_score}/10",
+                      at_second, actor="patient")
+
         for symptom in extraction.symptoms:
             self._add_symptom(symptom, extraction.provider, at_second)
         for denial in extraction.denials:
@@ -483,6 +518,64 @@ class ClinicSession:
             self._log("review_flag", flag.why, at_second,
                       detail={"flag_id": flag.trigger_id, "statement": text})
 
+    # -- questions ---------------------------------------------------------
+
+    def record_question(self, question_id: str, text: str, why: str = "") -> dict:
+        """
+        Mark a question as ASKED at the moment it reaches the patient.
+
+        This did not exist, and its absence was the whole broken loop:
+        `questions_asked` was read when choosing the next question and written
+        nowhere, so the same question was chosen forever. A patient answered,
+        the transcript logged it, and the screen never moved.
+        """
+        if any(q["id"] == question_id for q in self.questions_asked):
+            return self.snapshot()
+        entry = {"id": question_id, "text": text, "why": why,
+                 "at_clock": _clock(), "at_second": self._current_second(),
+                 "answer": "", "answered_at_second": None}
+        self.questions_asked.append(entry)
+        self.pending_question = entry
+        self._log("question", text, entry["at_second"],
+                  detail={"id": question_id, "why": why})
+        self._broadcast()
+        return self.snapshot()
+
+    def _attach_answer(self, text: str, at_second: float) -> None:
+        """
+        The next thing a patient says after a question is its answer.
+
+        Crude, and right often enough to be worth having: it puts the question
+        and the reply next to each other in the notes instead of leaving a
+        nurse to work out which sentence answered what.
+        """
+        if not self.pending_question or self.pending_question["answer"]:
+            return
+        self.pending_question["answer"] = text
+        self.pending_question["answered_at_second"] = at_second
+        self._log("answer", f"answered '{self.pending_question['text'][:48]}'",
+                  at_second, actor="patient",
+                  detail={"id": self.pending_question["id"], "answer": text})
+        self.pending_question = None
+
+    def finish(self, reason: str = "no further question would change the "
+                                   "assessment") -> dict:
+        """
+        End the intake.
+
+        An assessment that never ends is not an assessment. The previous
+        version had no terminal state at all: once the question engine ran out,
+        the patient sat looking at a screen that had stopped responding without
+        saying so.
+        """
+        if not self.complete:
+            self.complete = True
+            self.completed_reason = reason
+            self._log("session", f"intake complete: {reason}",
+                      self._current_second())
+            self._broadcast()
+        return self.snapshot()
+
     # -- nurse actions -----------------------------------------------------
 
     def nurse_set_severity(self, term: str, severity: Optional[int],
@@ -622,7 +715,8 @@ class ClinicSession:
                                 if t not in {e.term for e in active}],
             "added_concerns": [c.get("concern") for c in self.concerns
                                if c.get("concern")],
-            "pain_score": max(severities) if severities else None,
+            "pain_score": (max(severities) if severities
+                           else self.reported_pain),
             "transcript": "",     # already extracted; do not double-count
             "typed_symptoms": "",
         }
@@ -713,6 +807,8 @@ class ClinicSession:
             "flags": dict(self.flags),
             "questions_asked": list(self.questions_asked),
             "model_question": self.model_question,
+            "complete": self.complete,
+            "completed_reason": self.completed_reason,
             "provider": self.provider.describe(),
             "degraded": self.degraded,
             "emergency_summary": summarise(self.emergency),

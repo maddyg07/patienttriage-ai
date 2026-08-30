@@ -160,3 +160,67 @@ ratchet has no code path that lowers a band; the safety rules have no path that
 lowers one; the uncertainty engine cannot write the score; nothing can mark a
 patient as seen. Those are properties of what is absent from the code, which is
 the only kind of safety claim that survives somebody editing it later.
+
+---
+
+## Why there is no facial-expression dataset in this project
+
+The question comes up every time somebody sees the doorway scan, and the
+answer is not "we ran out of time".
+
+**FER2013, AffectNet and CK+ classify the wrong thing.** They label seven basic
+emotions: happy, sad, angry, surprised, fearful, disgusted, neutral. A model
+trained on them can tell you a face looks sad. It cannot tell you a face is
+drooping on one side, and it has never seen a clinical presentation of
+anything. Wiring one in would let this console print "AI detected distress"
+backed by a classifier trained on actors posing to camera. That is worse than
+a crude honest measurement, because it looks like evidence.
+
+**They are posed, not clinical.** CK+ and much of AffectNet are posed or
+web-scraped expressions of healthy people. Pain, respiratory distress and
+neurological deficit are not in the label space at any point, so accuracy on
+the benchmark says nothing at all about accuracy on a patient.
+
+**Licensing.** AffectNet is research-only and non-commercial. CK+ requires a
+signed agreement. FER2013 carries Kaggle competition terms. None of those
+survive contact with a product.
+
+**And the deepest reason.** Even a perfect distress classifier cannot say
+whether a facial difference arrived this morning or at birth, and that single
+question decides stroke versus a person's ordinary appearance. It is answered
+by asking. Better detection does not move that question one inch closer to
+being solved, which is the argument this whole project is built on.
+
+### What we did instead
+
+`app/landmarks.py`, enabled with `python -m scripts.run_clinic --landmarks`.
+
+MediaPipe Face Landmarker: Apache 2.0, runs in the browser as WASM, **no
+training data on our part and no dataset licence**. It returns 478 facial
+landmarks, which are geometry rather than a judgement, so a measurement derived
+from them is a measurement instead of a classifier's opinion dressed as one.
+
+It gives mouth-corner height difference, eye-aperture difference and
+eyebrow-height difference, each mirrored about the face's own midline and
+normalised to the patient's interocular distance so the reading does not change
+with how far they sit from the camera. Illumination stops mattering entirely,
+because geometry is not luminance, and the side-lighting failure that produced
+a false asymmetry in Phase 17 simply cannot occur.
+
+Head roll replaces the lighting gradient as the rejection gate: a tilted head
+produces every one of those differences with no facial asymmetry at all, which
+is the geometric version of the same problem.
+
+Off by default. It needs a CDN, and a live demo that depends on conference wifi
+is a live demo that fails. On any failure — blocked CDN, unsupported browser,
+no face in frame — the console falls back to the luminance measurement and
+records which method produced the reading, so a nurse is never shown a
+geometric figure that was actually a brightness comparison.
+
+### Audio
+
+There is no dataset here either, and for a simpler reason: the audio channel
+measures a speech-and-pause envelope, which is a measurement and not a
+classification. It needs no labels. Voice-quality analysis — hoarseness,
+stridor, prosodic distress — would need a clinical corpus that we do not have
+and could not licence, and it is not implemented rather than approximated.
