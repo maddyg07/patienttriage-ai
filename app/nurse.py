@@ -136,6 +136,16 @@ _PAGE = r"""<!DOCTYPE html>
      padding:10px 12px;font:11.5px/1.6 ui-monospace,Menlo,monospace;
      color:var(--dim);white-space:pre-wrap;max-height:280px;overflow-y:auto}
   .empty{color:var(--faint);font-size:12px;padding:6px 0}
+  .vgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+  @media(max-width:640px){.vgrid{grid-template-columns:1fr 1fr}}
+  .vgrid label{display:block;font-size:10px;color:var(--faint);margin-bottom:3px;
+     text-transform:uppercase;letter-spacing:.4px}
+  .vgrid input,.vgrid select{width:100%}
+  .qbox{background:var(--panel2);border-left:3px solid var(--accent);
+     border-radius:4px;padding:12px 14px;font-size:14px}
+  .qbox .why{font-size:11px;color:var(--faint);margin-top:7px;
+     font-family:ui-monospace,Menlo,monospace}
+  .qbox.stopped{border-left-color:var(--emg);color:#ffc9c9}
 </style>
 </head>
 <body>
@@ -172,6 +182,58 @@ _PAGE = r"""<!DOCTYPE html>
           <button id="addBtn">Add</button>
         </div>
       </div>
+    </section>
+
+    <section>
+      <h2>Vitals and observations <span class="spacer"></span>
+          <span class="muted" style="font-size:10px;text-transform:none">
+            blank means not measured, never normal</span></h2>
+      <div class="body">
+        <div class="vgrid">
+          <div><label>Age</label><input id="v_age" type="number" step="0.1" placeholder="years"></div>
+          <div><label>Sex</label><select id="v_sex">
+            <option value="">&mdash;</option><option>female</option>
+            <option>male</option><option>unspecified</option></select></div>
+          <div><label>History</label><select id="v_hist">
+            <option value="">&mdash;</option><option value="zero">zero</option>
+            <option value="partial">partial</option><option value="rich">rich</option>
+          </select></div>
+          <div><label>Heart rate</label><input id="v_heart_rate" type="number" placeholder="bpm"></div>
+          <div><label>Resp rate</label><input id="v_respiratory_rate" type="number" placeholder="/min"></div>
+          <div><label>SpO&#8322;</label><input id="v_spo2" type="number" placeholder="%"></div>
+          <div><label>Temp</label><input id="v_temperature_c" type="number" step="0.1" placeholder="&deg;C"></div>
+          <div><label>Systolic</label><input id="v_systolic_bp" type="number" placeholder="mmHg"></div>
+          <div><label>Diastolic</label><input id="v_diastolic_bp" type="number" placeholder="mmHg"></div>
+          <div><label>Consciousness</label><select id="v_consciousness">
+            <option value="">&mdash;</option><option value="alert">alert</option>
+            <option value="responds_to_voice">to voice</option>
+            <option value="responds_to_pain">to pain</option>
+            <option value="unresponsive">unresponsive</option></select></div>
+          <div><label>Pallor/cyanosis</label><select id="v_skin_pallor_or_cyanosis">
+            <option value="">&mdash;</option><option value="no">no</option>
+            <option value="yes">yes</option></select></div>
+          <div><label>Gait abnormal</label><select id="v_gait_abnormal">
+            <option value="">&mdash;</option><option value="no">no</option>
+            <option value="yes">yes</option></select></div>
+        </div>
+        <div class="vgrid" style="margin-top:10px;grid-template-columns:1fr 1fr">
+          <div><label>Medications on file</label>
+            <input id="v_medications" placeholder="apixaban, bisoprolol"></div>
+          <div><label>Known conditions</label>
+            <input id="v_conditions" placeholder="atrial fibrillation"></div>
+        </div>
+        <div style="margin-top:11px;display:flex;gap:9px;align-items:center">
+          <button id="saveVitals">Record</button>
+          <span class="muted" id="vitalStatus"></span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Next question <span class="spacer"></span>
+          <span class="muted" style="font-size:10px;text-transform:none">
+            chosen for how much it could change the band</span></h2>
+      <div class="body" id="question"><span class="empty">&mdash;</span></div>
     </section>
 
     <section>
@@ -254,10 +316,32 @@ function render(s){
   drawVerdict(s);
   drawSymptoms(s);
   drawObservations(s);
+  drawQuestion(s);
   drawTimeline(s);
   drawTranscript(s);
   $("why").textContent = (s.assessment && s.assessment.panel_score) || "—";
   if(!notesDirty) $("notes").value = s.notes || "";
+  fillVitals(s);
+}
+
+let vitalsTouched = false;
+["v_age","v_sex","v_hist","v_medications","v_conditions"].concat(
+  ["heart_rate","respiratory_rate","spo2","temperature_c","systolic_bp",
+   "diastolic_bp","consciousness","skin_pallor_or_cyanosis","gait_abnormal"]
+    .map(f => "v_" + f)).forEach(id => {
+  const el = document.getElementById(id);
+  if(el) el.addEventListener("input", () => { vitalsTouched = true; });
+});
+
+function fillVitals(s){
+  /* Never overwrite something a nurse is in the middle of typing. */
+  if(vitalsTouched) return;
+  const d = s.demographics || {}, o = s.observations || {}, f = s.flags || {};
+  if(d.age_years != null) $("v_age").value = d.age_years;
+  if(d.sex) $("v_sex").value = d.sex;
+  if(d.history_tier) $("v_hist").value = d.history_tier;
+  Object.keys(o).forEach(k => { const el = $("v_" + k); if(el) el.value = o[k]; });
+  Object.keys(f).forEach(k => { const el = $("v_" + k); if(el) el.value = f[k]; });
 }
 
 function drawEmergency(s){
@@ -432,6 +516,24 @@ function noteObs(id){
                                   note, nurse: "N. Sharma"});
 }
 
+function drawQuestion(s){
+  const box = $("question");
+  if(!s.routine_questions_allowed){
+    box.innerHTML = '<div class="qbox stopped"><b>Questioning stopped.</b><br>' +
+      'The emergency gate is open. Nothing is being asked, and the history is ' +
+      'incomplete by design.</div>';
+    return;
+  }
+  if(!s.next_question){
+    box.innerHTML = '<span class="empty">No question would change the band ' +
+      'right now.</span>';
+    return;
+  }
+  box.innerHTML = '<div class="qbox">' + esc(s.next_question) +
+    '<div class="why">' + esc(s.next_question_why || "asked on the patient screen") +
+    '</div></div>';
+}
+
 function drawTimeline(s){
   const el = $("tl");
   const stick = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
@@ -447,6 +549,31 @@ function drawTranscript(s){
   $("tx").textContent = (s.transcript || []).map(
     t => t.at_clock + "  " + t.text).join("\n") || "—";
 }
+
+const VITAL_FIELDS = ["heart_rate","respiratory_rate","spo2","temperature_c",
+                      "systolic_bp","diastolic_bp","consciousness",
+                      "skin_pallor_or_cyanosis","gait_abnormal"];
+
+$("saveVitals").onclick = async () => {
+  const demo = {};
+  if($("v_age").value) demo.age_years = Number($("v_age").value);
+  if($("v_sex").value) demo.sex = $("v_sex").value;
+  if($("v_hist").value) demo.history_tier = $("v_hist").value;
+  if(Object.keys(demo).length) await post("/api/demographics", demo);
+
+  const obs = {};
+  VITAL_FIELDS.forEach(f => {
+    const el = $("v_" + f); if(!el || el.value === "") return;
+    obs[f] = el.type === "number" ? Number(el.value) : el.value;
+  });
+  const meds = $("v_medications").value.split(",").map(x=>x.trim()).filter(Boolean);
+  const cond = $("v_conditions").value.split(",").map(x=>x.trim()).filter(Boolean);
+  if(meds.length) obs.medications = meds;
+  if(cond.length) obs.conditions = cond;
+  if(Object.keys(obs).length) await post("/api/observations", obs);
+  $("vitalStatus").textContent = "recorded";
+  setTimeout(() => { $("vitalStatus").textContent = ""; }, 2500);
+};
 
 $("saveNotes").onclick = async () => {
   await post("/api/nurse/notes", {text: $("notes").value, nurse: "N. Sharma"});

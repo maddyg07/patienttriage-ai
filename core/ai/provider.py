@@ -104,6 +104,7 @@ class Extraction:
     baseline_hints: List[Dict[str, str]] = field(default_factory=list)
     emergency_phrases: List[Dict[str, str]] = field(default_factory=list)
     chief_complaint: str = ""
+    next_question: str = ""
     pain_score: Optional[int] = None
     provider: str = ""
     degraded: bool = False                  # a fallback served this
@@ -117,6 +118,7 @@ class Extraction:
             "baseline_hints": list(self.baseline_hints),
             "emergency_phrases": list(self.emergency_phrases),
             "chief_complaint": self.chief_complaint,
+            "next_question": self.next_question,
             "pain_score": self.pain_score,
             "provider": self.provider,
             "degraded": self.degraded,
@@ -183,40 +185,49 @@ def get_provider(prefer: Optional[str] = None) -> LanguageProvider:
     """
     Return the best available provider, degrading rather than failing.
 
-    Order: an explicitly requested one, then the model provider if a key is
-    present, then the deterministic one. The deterministic provider has no
-    prerequisites and always answers, so this function cannot raise.
+    Order: an explicitly named vendor, then whichever vendor has a key
+    configured, then the deterministic matcher. The matcher has no
+    prerequisites and always answers, so this cannot raise and the console
+    cannot fail to start.
 
-    Set PATIENTTRIAGE_PROVIDER=local to force the offline path even with a key
-    present, which is what the test suite does so that the same inputs give the
+    Whichever key you have is the one that works. Set
+    PATIENTTRIAGE_PROVIDER=local to force the offline path even with a key
+    present, which is what the test suite does so the same input gives the
     same findings on every machine.
     """
-    from core.ai.claude_provider import ClaudeProvider
     from core.ai.local_provider import LocalProvider
+    from core.ai.model_provider import VENDORS
 
     requested = (prefer or os.environ.get("PATIENTTRIAGE_PROVIDER") or "").lower()
     local = LocalProvider()
 
-    if requested in ("local", "deterministic", "offline"):
+    if requested in ("local", "deterministic", "offline", "none"):
         return local
 
-    model = ClaudeProvider(fallback=local)
-    if requested in ("claude", "model", "anthropic"):
-        return model
-    return model if model.available() else local
+    if requested in VENDORS:
+        return VENDORS[requested](fallback=local)
+
+    for vendor in ("openai", "gemini", "anthropic"):
+        provider = VENDORS[vendor](fallback=local)
+        if provider.available():
+            return provider
+    return local
 
 
 def describe_providers() -> List[dict]:
-    """What is available on this machine, for the startup banner and the UI."""
-    from core.ai.claude_provider import ClaudeProvider
+    """What is configured on this machine, for the banner and both dashboards."""
     from core.ai.local_provider import LocalProvider
+    from core.ai.model_provider import AnthropicProvider, GeminiProvider, OpenAIProvider
 
     out = []
-    for provider in (ClaudeProvider(), LocalProvider()):
+    for provider in (OpenAIProvider(), GeminiProvider(), AnthropicProvider(),
+                     LocalProvider()):
         out.append({
             "name": provider.name,
             "kind": provider.kind,
             "available": provider.available(),
             "needs_network": provider.needs_network,
+            "env_key": getattr(provider, "env_key", ""),
+            "model": getattr(provider, "model", ""),
         })
     return out

@@ -83,6 +83,23 @@ SCENARIOS = {
                        "and I feel like I'm going to pass out"),
                   (34, "actually I feel a bit better now")],
     },
+    "trauma": {
+        "why": "the case that scored zero and displayed NORMAL",
+        "expect": "EMERGENCY on the mechanism, with no symptom in the sentence",
+        "demographics": {"age_years": 20, "sex": "male", "history_tier": "zero"},
+        "observations": {},
+        "turns": [(14, "I've been in a fatal car accident my friend is dead "
+                       "and my leg is amputated due to the accident"),
+                  (18, "what do I do")],
+    },
+    "self_harm": {
+        "why": "an emergency with no injury and no symptom at all",
+        "expect": "EMERGENCY, questioning stops",
+        "demographics": {"age_years": 24, "sex": "female", "history_tier": "zero"},
+        "observations": {"heart_rate": 92, "spo2": 98, "consciousness": "alert"},
+        "turns": [(9, "I took all the tablets about an hour ago"),
+                  (20, "I just want it to stop")],
+    },
     "visual": {
         "why": "the camera saw something that is not a diagnosis",
         "expect": "logged as an observation, unreviewed, awaiting a nurse",

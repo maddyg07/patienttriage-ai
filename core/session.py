@@ -193,6 +193,8 @@ class ClinicSession:
         self.observations: Dict = {}
         self.flags: Dict = {}
         self.questions_asked: List[dict] = []
+        # What the model suggested asking next, if a model served this turn.
+        self.model_question: str = ""
         self.nurse_notes_override = ""
         self.last_result: Dict = {}
         self.degraded = False
@@ -254,7 +256,14 @@ class ClinicSession:
         self._log("speech", text, at_second, actor="patient")
 
         # 1. GATE FIRST, on the raw words, by rule, with no dependencies.
+        #    Spoken phrases, catastrophic mechanism and extreme severity
+        #    language all run here, before extraction, before scoring. The
+        #    mechanism layer is why "my leg is amputated" now reaches a nurse:
+        #    it is not a symptom and the symptom-shaped version of this gate
+        #    was blind to it.
         self._fire_triggers(self.gate.spoken(text, at_second))
+        self._fire_triggers(self.gate.mechanism(text, at_second))
+        self._fire_triggers(self.gate.severity_language(text, at_second))
 
         # 2. Extraction. May be slow, may be degraded, may fail.
         context = {
@@ -263,6 +272,7 @@ class ClinicSession:
         }
         extraction = self.provider.extract(text, context)
         self.degraded = bool(extraction.degraded)
+        self.model_question = getattr(extraction, "next_question", "") or ""
         self._absorb(extraction, at_second)
 
         # 3. Anything the model flagged that the rules did not. Additive only.
@@ -623,7 +633,29 @@ class ClinicSession:
     def reassess(self, at_second: float = 0.0) -> dict:
         from core.intake_bridge import serialise
         patient = build_patient(self._payload())
-        assessment = self.ratchet.record(self.engine.assess(patient, now_minute=0))
+        assessment = self.engine.assess(patient, now_minute=0)
+
+        # AN OPEN GATE FLOORS THE BAND.
+        #
+        # Without this the console showed "risk 0/100, L1 WATCH, status
+        # EMERGENCY" for a patient describing an amputation, which is
+        # architecturally correct -- the gate is independent of the score, and
+        # the score is right that no scoreable symptom was mentioned -- and
+        # completely indefensible on a screen a nurse is reading in seconds.
+        #
+        # The floor is applied the same way every other hard rule is applied:
+        # it can only RAISE, it is recorded by name, and the score underneath
+        # is left alone rather than being inflated to justify the band. The
+        # panel still says 0, because 0 is what the symptoms came to. The band
+        # says CODE, because somebody has told us their leg is off.
+        if self.emergency.active and (assessment.proposed_band is None
+                                      or assessment.proposed_band < TriageBand.L4_CODE):
+            reasons = ", ".join(t.trigger_id for t in self.emergency.active_triggers)
+            assessment.proposed_band = TriageBand.L4_CODE
+            assessment.safety_rules_fired.append(
+                f"EMERGENCY_GATE -> floor CODE (BINDING): {reasons}")
+
+        assessment = self.ratchet.record(assessment)
         result = serialise(patient, assessment, self.hospital)
 
         previous = self.last_result.get("band_code")
@@ -680,6 +712,7 @@ class ClinicSession:
             "observations": dict(self.observations),
             "flags": dict(self.flags),
             "questions_asked": list(self.questions_asked),
+            "model_question": self.model_question,
             "provider": self.provider.describe(),
             "degraded": self.degraded,
             "emergency_summary": summarise(self.emergency),

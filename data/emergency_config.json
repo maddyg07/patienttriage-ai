@@ -1,60 +1,129 @@
 {
-  "_disclaimer": "SIMULATED DEMONSTRATION CONFIGURATION. These are escalation triggers for a prototype. They are not a validated screening instrument, they have not been tested against real presentations, and the system does not claim to detect cardiac arrest, stroke or any other condition. It identifies phrases and observations that MAY indicate a life-threatening situation and escalates them for human attention.",
+  "_disclaimer": "SIMULATED DEMONSTRATION CONFIGURATION. Escalation triggers for a prototype. Not a validated screening instrument. The system does not claim to detect any condition; it identifies language and values that MAY indicate a life-threatening situation and escalates them for human attention.",
 
-  "_design": "Two independent layers. The RULE layer fires on the patient's own words and on objective observations, always, with no network and no model. The MODEL layer may add triggers the rules missed. The model can only ADD: it has no path to clear a rule trigger, so a model failure degrades detection to the rule floor rather than removing it. This is the same asymmetry as the Ratchet, applied to the emergency gate.",
+  "_what_went_wrong_before": "The first version had ten categories, all of them medical: cardiac, respiratory, neurological, allergic, overdose. A patient said 'I have been in a fatal car accident, my friend is dead and my leg is amputated' and the system scored zero and called it NORMAL. Not a gap in the list -- a gap in the WAY the list was built. Enumerating the emergencies somebody thought of at the time is not a safety net, it is a record of that afternoon's imagination.",
 
-  "_sensitivity": "Deliberately over-sensitive. A false emergency costs a nurse thirty seconds of attention. A missed one is the failure this whole project exists to reduce. Every trigger is recorded with the exact phrase and timestamp so a nurse can dismiss it in one click and so the false-positive rate is measurable rather than assumed.",
+  "_how_it_is_built_now": "Three layers, and the phrase list is now the smallest of them. (1) The MODEL layer reads what the patient said and judges whether it may be life-threatening, with no list involved -- this is the primary layer whenever a key is configured. (2) The MECHANISM layer matches catastrophic events and body-part catastrophes by category rather than by symptom, so 'amputated', 'crushed', 'run over', 'stabbed' and 'not breathing' all reach the gate regardless of which body system they belong to. (3) The RULE layer below is a floor for the phrases most likely to arrive verbatim. Any layer can fire alone. None can silence another.",
 
   "spoken_triggers": [
-    {"id": "E1_cannot_breathe", "why": "states they cannot breathe",
+    {"id": "E1_airway_breathing", "why": "airway or breathing is failing",
      "phrases": ["cant breathe", "can not breathe", "cannot breathe", "not able to breathe",
                  "struggling to breathe", "cant get any air", "cant get enough air",
-                 "choking", "suffocating", "gasping for air", "throat is closing"]},
+                 "choking", "suffocating", "gasping for air", "throat is closing",
+                 "stopped breathing", "not breathing", "turning blue", "went blue",
+                 "lips are blue"]},
 
-    {"id": "E2_collapse_or_faint", "why": "states they are about to lose consciousness",
+    {"id": "E2_consciousness", "why": "consciousness is failing or lost",
      "phrases": ["going to pass out", "about to pass out", "going to faint",
                  "about to faint", "going to collapse", "about to collapse",
                  "losing consciousness", "blacking out", "about to black out",
-                 "cant stay conscious", "cant keep my eyes open"]},
+                 "passed out", "fainted", "collapsed", "unconscious",
+                 "wont wake up", "will not wake up", "unresponsive",
+                 "cant wake him", "cant wake her", "cant wake them"]},
 
-    {"id": "E3_cardiac_language", "why": "states they are having a cardiac event",
+    {"id": "E3_cardiac", "why": "cardiac event described",
      "phrases": ["having a heart attack", "heart attack", "cardiac arrest",
-                 "my heart has stopped", "heart is stopping"]},
+                 "my heart has stopped", "heart is stopping", "no pulse",
+                 "cant find a pulse"]},
 
-    {"id": "E4_stroke_language", "why": "states stroke-type symptoms",
+    {"id": "E4_neurological", "why": "acute neurological event described",
      "phrases": ["having a stroke", "cant move my left side", "cant move my right side",
                  "cant move one side", "my whole left side has gone",
                  "my whole right side has gone", "cant feel my left side",
-                 "cant feel my right side", "face has dropped", "cant speak properly"]},
+                 "cant feel my right side", "face has dropped", "cant speak properly",
+                 "cant see out of one eye", "went blind", "cant move my legs",
+                 "paralysed", "having a seizure", "having a fit", "convulsing",
+                 "fitting"]},
 
-    {"id": "E5_impending_doom", "why": "expresses a sense of impending death",
+    {"id": "E5_impending_doom", "why": "sense of impending death",
      "phrases": ["i think im dying", "i am dying", "im going to die",
                  "feel like im dying", "something is seriously wrong",
-                 "something is very wrong", "i feel like im about to die"]},
+                 "something is very wrong", "i feel like im about to die",
+                 "help me please", "i cant take this"]},
 
-    {"id": "E6_severe_chest", "why": "describes severe chest symptoms",
+    {"id": "E6_severe_pain", "why": "pain described as unbearable or worst ever",
      "phrases": ["chest pain is unbearable", "worst chest pain", "crushing chest pain",
                  "chest pain is severe", "severe chest pressure",
-                 "elephant sitting on my chest", "chest is being crushed"]},
+                 "elephant sitting on my chest", "chest is being crushed",
+                 "worst pain of my life", "worst pain ever", "unbearable pain",
+                 "excruciating", "pain is unbearable", "screaming in pain",
+                 "worst headache of my life", "worst headache ever", "thunderclap"]},
 
-    {"id": "E7_bleeding", "why": "describes uncontrolled bleeding",
+    {"id": "E7_haemorrhage", "why": "major or uncontrolled bleeding",
      "phrases": ["bleeding heavily", "cant stop the bleeding", "wont stop bleeding",
                  "losing a lot of blood", "blood everywhere", "coughing up blood",
-                 "vomiting blood"]},
+                 "vomiting blood", "bleeding out", "haemorrhaging", "hemorrhaging",
+                 "soaked through", "gushing blood", "spurting"]},
 
-    {"id": "E8_anaphylaxis", "why": "describes a severe allergic reaction",
+    {"id": "E8_anaphylaxis", "why": "severe allergic reaction",
      "phrases": ["anaphylaxis", "anaphylactic", "severe allergic reaction",
                  "my tongue is swelling", "my throat is swelling",
-                 "lips are swelling up"]},
+                 "lips are swelling up", "face is swelling up", "used my epipen"]},
 
-    {"id": "E9_overdose", "why": "reports an overdose or poisoning",
+    {"id": "E9_poisoning", "why": "overdose, poisoning or ingestion",
      "phrases": ["overdose", "took too many", "swallowed the whole", "poisoned myself",
-                 "drank bleach"]},
+                 "drank bleach", "swallowed bleach", "took all the tablets",
+                 "gas leak", "carbon monoxide", "snake bite", "bitten by a snake"]},
 
-    {"id": "E10_worst_headache", "why": "describes a sudden severe headache",
-     "phrases": ["worst headache of my life", "worst headache ever",
-                 "like being hit in the head", "thunderclap"]}
+    {"id": "E10_obstetric", "why": "obstetric emergency",
+     "phrases": ["waters have broken", "the baby is coming", "im in labour",
+                 "bleeding and im pregnant", "cant feel the baby moving",
+                 "baby is not moving", "contractions are"]},
+
+    {"id": "E11_self_harm", "why": "risk of harm to self or others",
+     "phrases": ["want to kill myself", "going to kill myself", "want to end it",
+                 "tried to kill myself", "took the pills to", "want to die",
+                 "going to hurt myself", "going to hurt someone"]}
   ],
+
+  "_mechanism_note": "Categories of catastrophic EVENT and catastrophic INJURY, matched independently of which body system they belong to. This layer exists because the fatal-car-accident case had no symptom in it at all: the patient described what happened to them, not what they were feeling, and a symptom-shaped gate had nothing to match. Any hit here is a trigger on its own.",
+
+  "mechanism_triggers": [
+    {"id": "M1_major_trauma", "why": "high-energy trauma mechanism described",
+     "phrases": ["car accident", "car crash", "road accident", "motorbike accident",
+                 "bike accident", "hit by a car", "run over", "knocked down",
+                 "head on collision", "rolled the car", "thrown from",
+                 "fell from a height", "fell down the stairs", "fell off the roof",
+                 "fell off a ladder", "crushed", "trapped under", "machinery accident",
+                 "industrial accident", "explosion", "blast"]},
+
+    {"id": "M2_penetrating_trauma", "why": "penetrating injury described",
+     "phrases": ["stabbed", "stabbing wound", "shot", "gunshot", "bullet",
+                 "impaled", "puncture wound", "knife went in", "glass went in"]},
+
+    {"id": "M3_limb_catastrophe", "why": "limb loss or destruction described",
+     "phrases": ["amputated", "amputation", "severed", "cut off my", "cut clean off",
+                 "lost my leg", "lost my arm", "lost my hand", "lost my foot",
+                 "lost a finger", "degloved", "bone is sticking out",
+                 "bone is showing", "leg is bent the wrong way",
+                 "arm is bent the wrong way", "nearly came off"]},
+
+    {"id": "M4_burns", "why": "significant burn injury described",
+     "phrases": ["badly burnt", "badly burned", "burnt all over", "burned all over",
+                 "acid burn", "chemical burn", "electrical burn", "electrocuted",
+                 "scalded badly", "caught fire", "on fire", "flames"]},
+
+    {"id": "M5_head_and_spine", "why": "head or spinal injury described",
+     "phrases": ["hit my head hard", "knocked out", "knocked unconscious",
+                 "head injury", "skull", "broke my neck", "broke my back",
+                 "cant feel my legs", "spine injury", "landed on my head"]},
+
+    {"id": "M6_drowning_asphyxia", "why": "drowning, hanging or asphyxia described",
+     "phrases": ["drowning", "nearly drowned", "pulled from the water", "hanged",
+                 "strangled", "smoke inhalation", "trapped in the fire"]},
+
+    {"id": "M7_death_at_scene", "why": "a death or a critically injured person at the scene",
+     "phrases": ["my friend is dead", "he is dead", "she is dead", "they died",
+                 "someone died", "is dead", "died at the scene", "killed"]}
+  ],
+
+  "_severity_note": "Intensifiers do not fire on their own. Paired with a symptom or a body part in the same clause they indicate that the patient is describing something at the top of their own scale, which is information a triage system should not discard because the exact phrase was not on a list.",
+
+  "severity_words": ["unbearable", "excruciating", "agonising", "agonizing",
+                     "worst", "severe", "terrible", "horrific", "fatal",
+                     "massive", "catastrophic", "cant bear", "cant stand it",
+                     "screaming", "unbelievable pain", "10 out of 10",
+                     "ten out of ten"],
 
   "observed_triggers": [
     {"id": "O1_unresponsive", "why": "not responding to voice or pain",
@@ -66,7 +135,9 @@
     {"id": "O4_critical_hypotension", "why": "systolic pressure critically low",
      "field": "systolic_bp", "below": 85},
     {"id": "O5_critical_tachycardia", "why": "heart rate critically abnormal",
-     "field": "heart_rate", "above": 145, "below": 38}
+     "field": "heart_rate", "above": 145, "below": 38},
+    {"id": "O6_critical_temperature", "why": "temperature critically abnormal",
+     "field": "temperature_c", "above": 40.5, "below": 34.5}
   ],
 
   "combination_triggers": [
@@ -75,7 +146,10 @@
      "requires": ["facial_acute_change", "speech_abnormality", "unilateral_weakness"]},
     {"id": "C2_cardiac_cluster",
      "why": "chest pain with breathlessness and pallor or sweating",
-     "requires": ["chest pain", "breathlessness", "pallor_or_sweating"]}
+     "requires": ["chest pain", "breathlessness", "pallor_or_sweating"]},
+    {"id": "C3_sepsis_cluster",
+     "why": "fever with rigors and altered consciousness",
+     "requires": ["fever", "rigors", "altered_consciousness"]}
   ],
 
   "settings": {

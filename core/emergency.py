@@ -20,13 +20,39 @@ So the gate does not score. It matches, it records, and it interrupts. It runs
 on the fragment as it arrives rather than on the finished assessment, and its
 output is a state change, not a number.
 
-THREE LAYERS, AND WHY THE MODEL CANNOT WEAKEN THEM
---------------------------------------------------
-  * SPOKEN: the patient's own words, matched by rule. No network, no key, no
-    model. This layer always runs and always fires.
-  * OBSERVED: objective values past a critical threshold, and the multimodal
-    contradiction case below.
-  * MODEL: phrases a language model flagged that the rules did not have.
+WHAT THIS FILE GOT WRONG, AND WHY IT IS BUILT DIFFERENTLY NOW
+-------------------------------------------------------------
+The first version was ten phrase groups, all of them medical: cardiac,
+respiratory, neurological, allergic, overdose. A patient said
+
+    "I have been in a fatal car accident, my friend is dead and my leg is
+     amputated due to the accident"
+
+and this file returned nothing. The system scored zero and called it NORMAL.
+
+That is not a missing phrase. It is a missing IDEA. The patient described what
+HAPPENED TO THEM, not what they were feeling, and a gate built entirely out of
+symptom language had nothing to match against. Adding "amputated" to the list
+would fix that sentence and leave the next one broken, because enumerating the
+emergencies somebody thought of on a Tuesday is a record of that afternoon, not
+a safety net.
+
+FOUR LAYERS, AND WHY NONE CAN SILENCE ANOTHER
+---------------------------------------------
+  * MODEL: a language model judges whether what was said may be
+    life-threatening, with no list involved. PRIMARY whenever a key is
+    configured, because this is the only layer that can handle a sentence
+    nobody anticipated.
+  * MECHANISM: catastrophic EVENTS and catastrophic INJURIES, by category
+    rather than by body system -- trauma, penetrating injury, limb loss, burns,
+    head and spine, drowning, a death at the scene. This is the layer the
+    car-accident case needed.
+  * SPOKEN: the phrases most likely to arrive verbatim. A floor, not the roof.
+  * OBSERVED: objective values past a critical threshold.
+
+Any layer fires alone. `evaluate` takes the UNION. A model that is down, wrong,
+or talked into something degrades detection to the rule floor and cannot remove
+anything, which is the Ratchet's asymmetry applied to the gate.
 
 The model may only ADD. There is no code path by which a model clears a rule
 trigger, and `EmergencyGate.evaluate` takes the union rather than a consensus.
@@ -170,6 +196,56 @@ class EmergencyGate:
                     break
         return out
 
+    # -- layer 1b: catastrophic mechanism ----------------------------------
+
+    def mechanism(self, text: str, at_second: float = 0.0) -> List[Trigger]:
+        """
+        What happened to the patient, rather than what they are feeling.
+
+        The layer the fatal-car-accident case needed. A patient describing an
+        amputation, a stabbing, a fall from height or a death at the scene has
+        told a triage system everything it needs, and none of it is a symptom.
+        """
+        norm = self._normalise(text)
+        out: List[Trigger] = []
+        for rule in self.cfg.get("mechanism_triggers", []):
+            for phrase in rule["phrases"]:
+                if phrase in norm:
+                    out.append(Trigger(
+                        trigger_id=rule["id"], layer="mechanism",
+                        why=rule["why"],
+                        evidence=self._quote(norm, phrase).strip(),
+                        at_second=at_second))
+                    break
+        return out
+
+    def severity_language(self, text: str, at_second: float = 0.0) -> List[Trigger]:
+        """
+        The patient describing something at the top of their own scale.
+
+        An intensifier alone means nothing -- "severe traffic" is not an
+        emergency. Paired with a body part or a symptom word in the same
+        clause it means the patient is telling us this is the worst they have
+        had, and discarding that because the exact phrase was not on a list is
+        the failure this file already made once.
+        """
+        norm = self._normalise(text)
+        words = self.cfg.get("severity_words", [])
+        anchors = ("pain", "hurt", "bleed", "breath", "chest", "head", "burn",
+                   "injur", "wound", "accident", "crash", "fall", "cut",
+                   "leg", "arm", "back", "stomach", "blood")
+        for word in words:
+            at = norm.find(" " + word)
+            if at == -1:
+                continue
+            window = norm[max(0, at - 70):at + 70]
+            if any(anchor in window for anchor in anchors):
+                return [Trigger(
+                    "S1_extreme_severity_language", "severity",
+                    "patient describes this at the top of their own scale",
+                    self._quote(norm, word).strip(), at_second)]
+        return []
+
     # -- layer 2: objective observations -----------------------------------
 
     def observed(self, observations: Dict, at_second: float = 0.0) -> List[Trigger]:
@@ -273,6 +349,8 @@ class EmergencyGate:
         """
         found: List[Trigger] = []
         found += self.spoken(text, at_second)
+        found += self.mechanism(text, at_second)
+        found += self.severity_language(text, at_second)
         found += self.observed(observations or {}, at_second)
         found += self.combinations(facts or {}, at_second)
         found += self.from_model(model_phrases or [], at_second)

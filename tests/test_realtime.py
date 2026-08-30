@@ -62,7 +62,7 @@ class TestTheGateRunsFirst(ClaimTest):
             pass                     # extraction blew up, as designed
         self.assertTrue(s.emergency.active,
                         "extraction failing took the emergency gate with it")
-        self.assertIn("E1_cannot_breathe",
+        self.assertIn("E1_airway_breathing",
                       [t.trigger_id for t in s.emergency.triggers])
 
     def test_an_emergency_stops_routine_questioning(self):
@@ -77,7 +77,7 @@ class TestTheGateRunsFirst(ClaimTest):
         s = session()
         s.hear("honestly I think I'm having a heart attack", at_second=11)
         trigger = next(t for t in s.emergency.triggers
-                       if t.trigger_id == "E3_cardiac_language")
+                       if t.trigger_id == "E3_cardiac")
         self.assertIn("heart attack", trigger.evidence)
         self.assertTrue(trigger.at_clock)
         self.assertEqual(trigger.at_second, 11)
@@ -107,11 +107,15 @@ class TestTheGateRunsFirst(ClaimTest):
                         "the emergency cleared itself when the patient "
                         "said they felt better")
 
-        s.nurse_dismiss_trigger("E1_cannot_breathe", "settled on arrival, "
-                                "speaking full sentences", nurse="N. Sharma")
+        # Every active trigger has to be dismissed, individually, each with a
+        # reason. One sentence can legitimately fire several layers and
+        # clearing one of them is not clearing the emergency.
+        for trigger in list(s.emergency.active_triggers):
+            s.nurse_dismiss_trigger(trigger.trigger_id, "settled on arrival, "
+                                    "speaking full sentences", nurse="N. Sharma")
         self.assertFalse(s.emergency.active)
         dismissal = next(t for t in s.emergency.triggers
-                         if t.trigger_id == "E1_cannot_breathe")
+                         if t.trigger_id == "E1_airway_breathing")
         self.assertEqual(dismissal.dismissed_by, "N. Sharma")
         self.assertTrue(dismissal.dismiss_reason)
 
@@ -290,8 +294,8 @@ class TestNotesAreAssembledNotInvented(ClaimTest):
         key falls back and marks the extraction, and the session picks that up
         from the extraction rather than being told.
         """
-        from core.ai.claude_provider import ClaudeProvider
-        s = session(ClaudeProvider(api_key=""))
+        from core.ai.model_provider import AnthropicProvider
+        s = session(AnthropicProvider(api_key=""))
         s.hear("my chest hurts", at_second=3)
         self.assertTrue(s.degraded,
                         "the session did not notice it was running degraded")

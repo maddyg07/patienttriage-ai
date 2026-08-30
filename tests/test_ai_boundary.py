@@ -24,7 +24,7 @@ they exercise, are the control.
 from __future__ import annotations
 
 from core.ai import get_provider
-from core.ai.claude_provider import ClaudeProvider
+from core.ai.model_provider import AnthropicProvider
 from core.ai.local_provider import LocalProvider
 from core.ai.provider import (
     Extraction,
@@ -136,7 +136,7 @@ class TestTheModelProviderDegradesRatherThanFails(ClaimTest):
              "what the system can see.")
 
     def test_no_key_degrades_and_still_returns_findings(self):
-        provider = ClaudeProvider(api_key="")
+        provider = AnthropicProvider(api_key="")
         self.assertFalse(provider.available())
         found = provider.extract("my chest is killing me")
         self.assertTrue(found.degraded)
@@ -144,7 +144,7 @@ class TestTheModelProviderDegradesRatherThanFails(ClaimTest):
         self.assertIn("fallback", found.provider.lower())
 
     def test_the_degraded_flag_reaches_the_interface(self):
-        found = ClaudeProvider(api_key="").extract("my head is pounding")
+        found = AnthropicProvider(api_key="").extract("my head is pounding")
         self.assertTrue(found.as_dict()["degraded"],
                         "a degraded extraction is indistinguishable from a "
                         "model one in the payload the console renders")
@@ -153,7 +153,7 @@ class TestTheModelProviderDegradesRatherThanFails(ClaimTest):
     def test_it_only_ever_maps_to_terms_the_engine_can_score(self):
         from core.risk_engine import WEIGHTS_FILE, _load
         scoreable = set(_load(WEIGHTS_FILE)["symptoms"].keys())
-        self.assertEqual(set(ClaudeProvider(api_key="").vocabulary), scoreable)
+        self.assertEqual(set(AnthropicProvider(api_key="").vocabulary), scoreable)
 
     def test_a_term_outside_the_vocabulary_is_dropped_and_reported(self):
         """
@@ -161,7 +161,7 @@ class TestTheModelProviderDegradesRatherThanFails(ClaimTest):
         the weights file. Dropping it silently would make the vocabulary look
         complete when it is not.
         """
-        provider = ClaudeProvider(api_key="x")
+        provider = AnthropicProvider(api_key="x")
         built = provider._build(
             {"symptoms": [{"term": "chest pain"}, {"term": "hemoptysis"}]}, {})
         self.assertEqual(built.terms(), ["chest pain"])

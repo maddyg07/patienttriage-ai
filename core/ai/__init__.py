@@ -22,6 +22,13 @@ a band, an acuity, a confidence in the engine's sense, or a diagnosis, and
 tests/test_ai_boundary.py fails the build if one does.
 """
 
+from core.ai.model_provider import (
+    AnthropicProvider,
+    GeminiProvider,
+    HTTPModelProvider,
+    OpenAIProvider,
+    VENDORS,
+)
 from core.ai.provider import (
     Extraction,
     ExtractedSymptom,
@@ -32,6 +39,7 @@ from core.ai.provider import (
 )
 
 __all__ = [
-    "Extraction", "ExtractedSymptom", "LanguageProvider",
-    "ProviderUnavailable", "describe_providers", "get_provider",
+    "AnthropicProvider", "Extraction", "ExtractedSymptom", "GeminiProvider",
+    "HTTPModelProvider", "LanguageProvider", "OpenAIProvider",
+    "ProviderUnavailable", "VENDORS", "describe_providers", "get_provider",
 ]

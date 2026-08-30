@@ -16,12 +16,22 @@
 # http.server from the standard library. Speech recognition needs
 # Chrome or Edge; every other channel works in any browser.
 
-# Phase 18 -- real-time clinic, two dashboards, language extraction.
+# Phase 18/19 -- real-time clinic, two dashboards, model-backed language layer.
 # Still nothing to install. Server-Sent Events and ThreadingHTTPServer are
-# standard library; the Anthropic Messages API is one urllib POST.
+# standard library; every model call is one urllib POST.
 #
-# Optional, for model-based symptom extraction:
-#   export ANTHROPIC_API_KEY=sk-ant-...
-#   export PATIENTTRIAGE_MODEL=claude-sonnet-4-6      (default)
-#   export PATIENTTRIAGE_PROVIDER=local               (force offline)
-# Without a key the deterministic matcher serves and the console says so.
+# Set ONE of these for real natural-language understanding. Whichever key you
+# have is the one that gets used, checked in this order:
+#
+#   export OPENAI_API_KEY=sk-...            # gpt-4o-mini by default
+#   export GOOGLE_API_KEY=...               # gemini-2.0-flash by default
+#   export ANTHROPIC_API_KEY=sk-ant-...     # claude-sonnet-4-6 by default
+#
+# Optional:
+#   export PATIENTTRIAGE_MODEL=<model id>   # override the default model
+#   export PATIENTTRIAGE_PROVIDER=openai    # force one vendor
+#   export PATIENTTRIAGE_PROVIDER=local     # force the offline matcher
+#   export OPENAI_BASE_URL=...              # any OpenAI-compatible endpoint
+#
+# With no key the deterministic matcher serves, both dashboards show DEGRADED,
+# and the rule-based emergency gate is unaffected.
