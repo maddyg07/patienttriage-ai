@@ -381,7 +381,10 @@ class OpenAIProvider(HTTPModelProvider):
 class GeminiProvider(HTTPModelProvider):
     name = "Google Gemini"
     env_key = "GOOGLE_API_KEY"
-    default_model = "gemini-2.0-flash"
+    # Flash and Flash-Lite are the models on Google's free tier. Free-tier
+    # model availability moves; if this 404s, PATIENTTRIAGE_MODEL overrides it
+    # and ai.google.dev/gemini-api/docs/models has the current list.
+    default_model = "gemini-3.6-flash"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -406,6 +409,26 @@ class GeminiProvider(HTTPModelProvider):
 
     def _text_from(self, payload: dict) -> str:
         return payload["candidates"][0]["content"]["parts"][0]["text"]
+
+
+class GroqProvider(OpenAIProvider):
+    """
+    Groq. OpenAI-compatible wire format, so it inherits everything.
+
+    Here because it has a permanent free tier with no credit card and no
+    credit balance to run out of -- which is exactly the failure that sent
+    this project looking for alternatives. It serves open-weight models rather
+    than frontier ones, which for extracting symptoms from a sentence is a
+    trade worth making when the alternative is a phrase matcher.
+    """
+
+    name = "Groq"
+    env_key = "GROQ_API_KEY"
+    default_model = "llama-3.3-70b-versatile"
+
+    def _endpoint(self) -> str:
+        return os.environ.get("GROQ_BASE_URL",
+                              "https://api.groq.com/openai/v1") + "/chat/completions"
 
 
 class AnthropicProvider(HTTPModelProvider):
@@ -434,9 +457,16 @@ VENDORS = {
     "openai": OpenAIProvider,
     "gemini": GeminiProvider,
     "google": GeminiProvider,
+    "groq": GroqProvider,
     "anthropic": AnthropicProvider,
     "claude": AnthropicProvider,
 }
+
+# Tried in this order when no vendor is named. The two free tiers come first,
+# deliberately: a key that works costs nothing to try and an OpenAI account
+# with no credits fails in exactly the same way as no key at all, except that
+# it looks configured.
+SELECTION_ORDER = ("gemini", "groq", "openai", "anthropic")
 
 
 def _clamp(value, lo: float = 0.0, hi: float = 1.0) -> float:

@@ -160,6 +160,22 @@ class Clinic:
         if not session.routine_questions_allowed:
             return "", "", ""
 
+        # A QUESTION STAYS ON SCREEN UNTIL IT IS ANSWERED.
+        #
+        # This is the whole fix for the runaway. "Asked" used to mean "the page
+        # received it", so every server-sent frame advanced the ladder: the
+        # page rendered Q1 and reported it asked, the server recomputed and
+        # sent Q2, the page reported that asked, and so on. Seven questions
+        # were logged in the same second, before the patient had said a word,
+        # and the intake then declared itself complete.
+        #
+        # Asked now means asked. A pending question is returned unchanged, over
+        # and over, until the patient says something -- and the only thing that
+        # clears it is an answer.
+        pending = session.pending_question
+        if pending and not pending["answer"]:
+            return pending["text"], pending["id"], pending.get("why", "")
+
         asked = {q.get("id") for q in session.questions_asked}
 
         if session.complete:
@@ -191,8 +207,15 @@ class Clinic:
                 continue
 
         # Nothing left worth asking. That is a terminal state, not a silence:
-        # the previous version returned nothing here and the patient sat
-        # looking at a screen that had quietly stopped.
+        # an earlier version returned nothing here and the patient sat looking
+        # at a screen that had quietly stopped.
+        #
+        # But only once the patient has actually spoken. Reaching "exhausted"
+        # on an encounter with an empty transcript means the ladder ran itself,
+        # not that the history is complete, and finishing there ends the intake
+        # before it has begun.
+        if not session.transcript:
+            return "", "", ""
         return "", "", "exhausted"
 
 
@@ -491,9 +514,11 @@ def main():
         print(f"                {entry['name']:<32} {mark}")
     if clinic.provider.kind != "model":
         print()
-        print("  No ANTHROPIC_API_KEY set, so the deterministic matcher is")
-        print("  serving. It understands common phrasings and will miss")
-        print("  unusual ones. Export a key for model-based extraction.")
+        print("  No API key set, so the deterministic matcher is serving. It")
+        print("  understands common phrasings and will miss unusual ones.")
+        print("  Two providers are free and need no credit card:")
+        print("    export GOOGLE_API_KEY=...   aistudio.google.com/apikey")
+        print("    export GROQ_API_KEY=gsk_... console.groq.com/keys")
     print()
     print("  Open both pages side by side. There is no Assess button:")
     print("  speak, and the nurse screen updates as you do.")

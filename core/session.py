@@ -202,6 +202,7 @@ class ClinicSession:
         self.nurse_notes_override = ""
         self.last_result: Dict = {}
         self.degraded = False
+        self.degraded_reason = ""
 
         self._subscribers: List[Callable[[dict], None]] = []
         self._log("session", "Encounter opened", detail={"session": session_id})
@@ -277,6 +278,10 @@ class ClinicSession:
         }
         extraction = self.provider.extract(text, context)
         self.degraded = bool(extraction.degraded)
+        # WHY it degraded, not just that it did. A DEGRADED badge with no
+        # reason tells a nurse the system is worse without telling them what to
+        # do about it, and tells whoever set the key up nothing at all.
+        self.degraded_reason = extraction.note if extraction.degraded else ""
         self.model_question = getattr(extraction, "next_question", "") or ""
         self._absorb(extraction, at_second)
 
@@ -811,5 +816,6 @@ class ClinicSession:
             "completed_reason": self.completed_reason,
             "provider": self.provider.describe(),
             "degraded": self.degraded,
+            "degraded_reason": self.degraded_reason,
             "emergency_summary": summarise(self.emergency),
         }

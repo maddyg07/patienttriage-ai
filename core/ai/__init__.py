@@ -25,6 +25,7 @@ tests/test_ai_boundary.py fails the build if one does.
 from core.ai.model_provider import (
     AnthropicProvider,
     GeminiProvider,
+    GroqProvider,
     HTTPModelProvider,
     OpenAIProvider,
     VENDORS,
@@ -39,7 +40,7 @@ from core.ai.provider import (
 )
 
 __all__ = [
-    "AnthropicProvider", "Extraction", "ExtractedSymptom", "GeminiProvider",
+    "AnthropicProvider", "Extraction", "ExtractedSymptom", "GeminiProvider", "GroqProvider",
     "HTTPModelProvider", "LanguageProvider", "OpenAIProvider",
     "ProviderUnavailable", "VENDORS", "describe_providers", "get_provider",
 ]

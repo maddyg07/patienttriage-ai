@@ -161,6 +161,7 @@ _PAGE = r"""<!DOCTYPE html>
 
 <main>
   <div class="full" id="emgSlot"></div>
+  <div class="full" id="degradeSlot"></div>
 
   <div>
     <section>
@@ -310,7 +311,18 @@ function render(s){
   state = s;
   $("statusPill").textContent = s.status.toUpperCase();
   $("statusPill").className = "pill " + s.status.replace(" ", "");
-  $("providerPill").textContent = s.provider + (s.degraded ? " · DEGRADED" : "");
+  const pp = $("providerPill");
+  pp.textContent = s.provider + (s.degraded ? " · DEGRADED" : "");
+  pp.title = s.degraded_reason || "";
+  pp.style.borderColor = s.degraded ? "var(--con)" : "";
+  pp.style.color = s.degraded ? "var(--con)" : "";
+  const banner = $("degradeSlot");
+  banner.innerHTML = s.degraded_reason
+    ? '<div class="conflict"><b>Language extraction degraded</b><br>' +
+      esc(s.degraded_reason) + '<br><span class="muted">The rule-based ' +
+      'emergency gate is unaffected and still running. Unusual phrasings may ' +
+      'be missed &mdash; read the transcript rather than only the findings.</span></div>'
+    : "";
 
   drawEmergency(s);
   drawVerdict(s);

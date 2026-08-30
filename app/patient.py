@@ -156,6 +156,12 @@ _PAGE = r"""<!DOCTYPE html>
 </footer>
 
 <script>
+/* Settings injected by render_patient. Declared BEFORE anything reads it:
+   the previous version referenced S on the second line without ever declaring
+   it, which threw a ReferenceError, aborted the whole script, and left every
+   button on the page unbound. The Start button did nothing and the console
+   said why -- but only if you had it open. */
+const S = __SETTINGS__;
 const $ = id => document.getElementById(id);
 window.__USE_LANDMARKS__ = !!(S && S.landmarks);
 
@@ -418,7 +424,11 @@ function render(s){
     /* Nothing left worth asking and no emergency: the intake is done. The
        previous version simply stopped responding here, with no question, no
        message, and no end. */
-    if(!s.emergency.active && s.next_question_why === "exhausted" && !finished){
+    /* Only when the patient has actually spoken. "exhausted" on an empty
+       transcript meant the ladder ran itself, and the screen said
+       "Finished. A nurse has your details." having asked nothing. */
+    if(!s.emergency.active && s.next_question_why === "exhausted"
+       && s.transcript && s.transcript.length && !finished){
       finished = true;
       fetch("/api/finish", {method:"POST",
         headers:{"Content-Type":"application/json"},

@@ -207,7 +207,8 @@ def get_provider(prefer: Optional[str] = None) -> LanguageProvider:
     if requested in VENDORS:
         return VENDORS[requested](fallback=local)
 
-    for vendor in ("openai", "gemini", "anthropic"):
+    from core.ai.model_provider import SELECTION_ORDER
+    for vendor in SELECTION_ORDER:
         provider = VENDORS[vendor](fallback=local)
         if provider.available():
             return provider
@@ -217,11 +218,12 @@ def get_provider(prefer: Optional[str] = None) -> LanguageProvider:
 def describe_providers() -> List[dict]:
     """What is configured on this machine, for the banner and both dashboards."""
     from core.ai.local_provider import LocalProvider
-    from core.ai.model_provider import AnthropicProvider, GeminiProvider, OpenAIProvider
+    from core.ai.model_provider import (
+        AnthropicProvider, GeminiProvider, GroqProvider, OpenAIProvider)
 
     out = []
-    for provider in (OpenAIProvider(), GeminiProvider(), AnthropicProvider(),
-                     LocalProvider()):
+    for provider in (GeminiProvider(), GroqProvider(), OpenAIProvider(),
+                     AnthropicProvider(), LocalProvider()):
         out.append({
             "name": provider.name,
             "kind": provider.kind,

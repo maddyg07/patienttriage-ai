@@ -172,3 +172,102 @@ class TestTheScanDoesNotFakeItsOwnStability(ClaimTest):
              "structure": 0.25, "gradient": 0.05, "frames": 7}, None)
         self.assertEqual(borderline.facial.strength, "possible")
         self.assertIsNone(borderline.facial.suggestion)
+
+
+class TestTheLoopDoesNotRunItself(ClaimTest):
+    claim = ("A question stays on screen until it is answered. Redrawing the "
+             "page does not advance the conversation.")
+
+    def test_repeated_frames_do_not_burn_through_the_ladder(self):
+        """
+        The runaway.
+
+        Every server-sent frame carries the next question. The page rendered
+        one, reported it asked, the server recomputed and sent the following
+        one, the page reported that asked, and so on. Seven questions were
+        logged in the same second, before the patient had said a word, and the
+        intake then declared itself complete.
+
+        The patient's screen showed "Finished. A nurse has your details."
+        having asked nothing at all.
+        """
+        c = clinic()
+        s = c.open()
+        for _ in range(12):                    # twelve SSE frames, patient silent
+            text, qid, why = c.next_question(s)
+            if text:
+                s.record_question(qid, text, why)
+        self.assertEqual(len(s.questions_asked), 1,
+                         f"{len(s.questions_asked)} questions were asked "
+                         f"without the patient saying anything")
+        self.assertFalse(s.complete,
+                         "the intake completed before the patient spoke")
+
+    def test_the_pending_question_is_returned_unchanged(self):
+        c = clinic()
+        s = c.open()
+        first = c.next_question(s)
+        s.record_question(first[0] and first[1], first[0], first[2])
+        for _ in range(5):
+            self.assertEqual(c.next_question(s)[1], first[1],
+                             "the question changed while it was still pending")
+
+    def test_answering_is_the_only_thing_that_advances_it(self):
+        c = clinic()
+        s = c.open()
+        text, qid, why = c.next_question(s)
+        s.record_question(qid, text, why)
+        c.next_question(s)
+        c.next_question(s)
+        self.assertEqual(c.next_question(s)[1], qid)
+        s.hear("my stomach is paining", 9)
+        self.assertNotEqual(c.next_question(s)[1], qid,
+                            "the question did not move on after an answer")
+
+    def test_an_intake_with_no_speech_never_completes(self):
+        """
+        Reaching the end of the ladder on an empty transcript means the ladder
+        ran itself, not that the history is complete.
+        """
+        c = clinic()
+        s = c.open()
+        for _ in range(20):
+            text, qid, why = c.next_question(s)
+            if text:
+                s.record_question(qid, text, why)
+        self.assertNotEqual(c.next_question(s)[2], "exhausted",
+                            "the intake called itself exhausted having heard "
+                            "nothing")
+
+    @has_teeth
+    def test_the_runaway_check_can_fail(self):
+        """
+        Drive the loop the way the broken page did -- clearing the pending
+        question each time, which is what "asked means received" amounted to --
+        and confirm the ladder does burn through. If it does not, the test
+        above is passing for the wrong reason.
+        """
+        c = clinic()
+        s = c.open()
+        for _ in range(12):
+            text, qid, why = c.next_question(s)
+            if text:
+                s.record_question(qid, text, why)
+                s.pending_question = None      # the old, broken behaviour
+        self.assertGreater(len(s.questions_asked), 1)
+
+
+class TestDegradationSaysWhy(ClaimTest):
+    claim = "A DEGRADED badge carries the reason it degraded."
+
+    def test_a_failing_provider_reports_a_reason(self):
+        from core.ai.model_provider import OpenAIProvider
+        from core.session import ClinicSession
+        s = ClinicSession("D", OpenAIProvider(api_key="sk-not-a-real-key"))
+        s.hear("my stomach is paining", 5)
+        self.assertTrue(s.degraded)
+        self.assertTrue(s.degraded_reason,
+                        "the console shows DEGRADED with no explanation, which "
+                        "tells a nurse the system is worse without telling "
+                        "them what to do about it")
+        self.assertIn("degraded_reason", s.snapshot())
