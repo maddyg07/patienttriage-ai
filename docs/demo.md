@@ -153,6 +153,35 @@ failure mode is more convincing than one that never meets it.
 
 ## Questions to expect
 
+**"Your camera said my face was asymmetric and it isn't."**
+That happened, on the first version, to the first person who was not the
+author. It read a single frame and compared two halves of a rectangle, so
+window light on one side of a face produced the same reading as a droop. The
+console now takes nine frames, fits and removes the left-to-right luminance
+ramp before comparing anything, and REJECTS the measurement outright when the
+lighting gradient is too strong, the reading moves between frames, or there is
+too little structure in the region to be a face. A rejected reading reports
+UNRELIABLE, which is deliberately not the same as reporting nothing found.
+
+**"It said I was breathless and I was just slow to start talking."**
+Also a real failure, also fixed at the measurement rather than the threshold.
+Leading and trailing silence are trimmed before anything is counted, the noise
+floor is estimated from the recording instead of hard-coded, breaks are counted
+per ten seconds OF SPEECH, and a single sustained phrase is treated as evidence
+against being unable to finish a sentence. Under 2.5 seconds of actual speech,
+no candidate is raised at all.
+
+**"Do the camera and microphone talk to each other?"**
+Yes, and it is the most useful thing in the capture layer. Both measurement
+sets go to one fusion step before either is allowed to suggest anything. A
+facial candidate alongside fluent, well-sustained speech is downgraded and
+reported as UNCORROBORATED with no suggestion offered, because a droop a camera
+can see usually travels with dysarthria and a picture that does not cohere is
+when to ask rather than assert. The same applies to a breathing pattern in a
+patient who looks comfortable. Corroboration can only change what the operator
+is asked; it has no route to a score or a band, and there is a test asserting
+that no fusion result contains one.
+
 **"Is the facial analysis real computer vision?"**
 It is a luminance symmetry index computed in the browser canvas, and it is
 crude. We chose not to build a landmark model, because detection is not where

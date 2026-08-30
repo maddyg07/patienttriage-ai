@@ -142,6 +142,25 @@ face three times and answer the baseline question differently each time:
 Same pixels, three answers. A better detector changes none of it. See
 `docs/demo.md` for the four-minute runbook.
 
+### Neither sensor decides alone
+
+The camera measures a gradient-corrected symmetry index over nine frames; the
+microphone measures a speech envelope with leading silence trimmed. Both go to
+`core/capture_fusion.py` together, and a reading is rejected before it is
+interpreted when the conditions that would make it meaningless are present —
+strong side lighting, a flickering reading, a region with no facial structure,
+an utterance with almost no speech in it. A rejected reading reports
+**unreliable**, which is not the same as reporting nothing found.
+
+Then the channels answer to each other. A facial candidate with entirely
+fluent, well-sustained speech is downgraded and marked uncorroborated with no
+suggestion offered: a droop a camera can see usually travels with dysarthria,
+and an incoherent picture is when to ask rather than assert. Corroboration
+changes what the operator is asked and can never reach a score or a band.
+
+Every gate in that file exists because the ungated version produced a false
+candidate in front of a real person. `tests/test_fusion.py` pins each one.
+
 ## Running it
 
 Requires Python 3.10 or newer. There are still no third-party dependencies.

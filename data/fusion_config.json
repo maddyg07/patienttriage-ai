@@ -1,0 +1,35 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION VALUES. These are signal-quality gates and candidate thresholds tuned so a live demo behaves sensibly on ordinary laptop hardware in ordinary room lighting. They are not measurement standards and carry no clinical authority.",
+  "_why_the_gates_come_first": "Each gate below exists because the ungated version produced a false candidate in real use. A shadow read as a droop; a late start read as breathlessness. Raising the candidate thresholds would only trade one error for the other. Rejecting the measurement when the conditions that make it meaningless are present is the only honest fix.",
+
+  "camera": {
+    "min_frames": 5,
+    "min_brightness": 40,
+    "max_brightness": 225,
+    "min_structure": 0.09,
+    "max_gradient": 0.18,
+    "max_spread": 0.055,
+    "possible": 0.20,
+    "strong": 0.34,
+    "_min_structure": "Standard deviation of cell luminance over the region, normalised. A blank wall scores near zero; a face scores well above this. Guards against analysing whatever happens to be behind the patient.",
+    "_max_gradient": "Magnitude of the fitted left-to-right luminance ramp after normalisation. Side lighting produces a smooth ramp across the whole region; a droop produces a localised difference. Above this, the two cannot be separated.",
+    "_max_spread": "Interquartile range of the symmetry index across frames. A real facial difference is stable; head movement and sensor noise are not.",
+    "_thresholds_raised": "possible was 0.16 and strong was 0.26 in the first version. Both were too low once the gradient correction was added, because the uncorrected index was inflated by ordinary room lighting on every reading."
+  },
+
+  "audio": {
+    "min_speech_seconds": 2.5,
+    "min_snr": 2.2,
+    "breaks_possible": 3.5,
+    "breaks_strong": 6.0,
+    "short_phrase_ms": 900,
+    "sustained_phrase_ms": 2200,
+    "_min_speech_seconds": "Measured on TRIMMED speech, after leading and trailing silence are removed. Somebody who takes a few seconds to start talking has not demonstrated anything about their breathing.",
+    "_breaks_per_10s": "Breaks are counted per ten seconds of speech rather than in absolute terms, so a long answer is not penalised for containing more pauses than a short one.",
+    "_sustained_phrase_ms": "A single sustained phrase above this length is treated as evidence AGAINST being unable to finish a sentence. One clean sentence settles the question that no amount of pause-counting can."
+  },
+
+  "fusion": {
+    "_note": "The cross-modal rules are in core/capture_fusion.py rather than here, because they are reasoning rather than tuning and belong somewhere a test can read them."
+  }
+}

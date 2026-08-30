@@ -120,12 +120,29 @@ class SymptomReader:
                     break
             if hit_at is None:
                 continue
-            window = lowered[max(0, hit_at - 26):hit_at]
+            # Scope the negation to the CLAUSE, not to a fixed number of
+            # characters. "denies breathlessness, temperature three days"
+            # denies breathlessness and reports a fever; a fixed lookback
+            # window denies both, because the marker is still inside it.
+            window = self._clause_before(lowered, hit_at)
             if any(marker in window for marker in self.negations):
                 denied.append(term)
             else:
                 reported.append(term)
         return reported, denied
+
+    # Boundaries that end a clause. A negation does not survive them.
+    _CLAUSE_BREAKS = (",", ";", ".", " and ", " but ", " with ", " also ",
+                      " plus ", " then ", " however ")
+
+    def _clause_before(self, text: str, index: int) -> str:
+        """The text between the nearest clause boundary and the match."""
+        start = 0
+        for marker in self._CLAUSE_BREAKS:
+            pos = text.rfind(marker, 0, index)
+            if pos != -1:
+                start = max(start, pos + len(marker))
+        return text[start:index]
 
     def duration_hours(self, text: str) -> Optional[float]:
         """Pull 'for three days' / 'about 2 hours' out of free text."""

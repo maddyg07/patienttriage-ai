@@ -44,6 +44,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from app.intake import render_intake
+from core.capture_fusion import CaptureFusion
 from core.config import HospitalConfig
 from core.intake_bridge import (
     IntakeSession,
@@ -63,10 +64,11 @@ class IntakeHandler(BaseHTTPRequestHandler):
     session: IntakeSession = None       # set in main()
     page: str = ""
     reader: SymptomReader = None
+    fusion: CaptureFusion = None
 
     # Keep the console readable. One line per assessment, not per asset.
     def log_message(self, fmt, *args):
-        if self.path in ("/assess", "/read"):
+        if self.path in ("/assess", "/read", "/fuse"):
             sys.stdout.write(f"  {self.path}  {fmt % args}\n")
 
     def _send(self, code: int, body: bytes, ctype: str):
@@ -102,13 +104,47 @@ class IntakeHandler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/read":
-            reported, denied = self.reader.read(payload.get("text", ""))
+            # Read each channel separately so every recognised term carries
+            # the channel it arrived on. The operator needs to see that a
+            # spoken symptom was counted; the first version read the two
+            # together and the console could not say where anything came from.
+            spoken = payload.get("transcript", "")
+            typed = payload.get("typed", "")
+            combined = payload.get("text", "") or f"{spoken} {typed}".strip()
+
+            tagged, seen = [], set()
+            denied_tagged, denied_seen = [], set()
+            for text, channel in ((spoken, "voice"), (typed, "typed")):
+                if not text:
+                    continue
+                reported, denied = self.reader.read(text)
+                for term in reported:
+                    if term not in seen:
+                        seen.add(term)
+                        tagged.append({"term": term, "channel": channel})
+                for term in denied:
+                    if term not in denied_seen:
+                        denied_seen.add(term)
+                        denied_tagged.append({"term": term, "channel": channel})
+
+            # A term denied on one channel and reported on another is a
+            # conflict in the account itself. It stays REPORTED and the denial
+            # stays recorded; the engine sees both and raises uncertainty.
+            denied_tagged = [d for d in denied_tagged if d["term"] not in seen]
+
             self._json(200, {
-                "reported": reported,
-                "denied": denied,
-                "pain_score": self.reader.pain_score(payload.get("text", "")),
-                "duration_hours": self.reader.duration_hours(payload.get("text", "")),
+                "reported": tagged,
+                "denied": denied_tagged,
+                "pain_score": self.reader.pain_score(combined),
+                "duration_hours": self.reader.duration_hours(combined),
             })
+            return
+
+        if self.path == "/fuse":
+            # The sensors answer to each other here, before either is allowed
+            # to suggest anything to the operator.
+            result = self.fusion.fuse(payload.get("camera"), payload.get("audio"))
+            self._json(200, result.as_dict())
             return
 
         if self.path == "/assess":
@@ -150,6 +186,7 @@ def main():
 
     IntakeHandler.session = IntakeSession(profile)
     IntakeHandler.reader = SymptomReader(cfg, weights)
+    IntakeHandler.fusion = CaptureFusion()
     IntakeHandler.page = render_intake(cfg, vocabulary)
 
     hospital = HospitalConfig.load(profile)
@@ -169,6 +206,7 @@ def main():
     print(f"  hospital    {hospital.name}")
     print(f"  vocabulary  {len(vocabulary)} scoreable symptom terms")
     print(f"  engine      real pipeline: score, uncertainty, safety, ratchet")
+    print(f"  fusion      camera and voice corroborate before either suggests")
     print()
     print("  Use Chrome or Edge for speech recognition. Camera and microphone")
     print("  are granted on this loopback origin without a certificate.")
