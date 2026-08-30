@@ -266,12 +266,26 @@ class NarrativeReader:
     # -- pass 3: stated concerns ------------------------------------------
 
     def _stated_concerns(self, text: str) -> List[Dict[str, str]]:
+        """
+        Whole-word matching, unlike the symptom passes.
+
+        A symptom alias may match inside a word, because "cough" should catch
+        "coughing". A concern must not: the alias "mi" matched "mild" and
+        "migraine" and put a cardiac concern on the nurse's screen in two
+        scenarios where nobody mentioned their heart. A false concern costs the
+        same trust as a false alert.
+        """
         found: List[Dict[str, str]] = []
         for key, spec in self.concerns.items():
             for alias in spec.get("aliases", []):
-                at = text.find(" " + alias)
-                if at == -1:
+                # Word boundaries, not bare substrings. The normalised text
+                # keeps clause punctuation, so "heart attack," must still
+                # match while "migraine" must not match "mi".
+                match = re.search(r"(?<![a-z])" + re.escape(alias) + r"(?![a-z])",
+                                  text)
+                if match is None:
                     continue
+                at = match.start() - 1
                 if self._negated(text, at + 1):
                     break
                 found.append({

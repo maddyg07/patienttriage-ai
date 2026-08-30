@@ -15,3 +15,13 @@
 # getUserMedia, Web Audio and SpeechRecognition APIs; the server is
 # http.server from the standard library. Speech recognition needs
 # Chrome or Edge; every other channel works in any browser.
+
+# Phase 18 -- real-time clinic, two dashboards, language extraction.
+# Still nothing to install. Server-Sent Events and ThreadingHTTPServer are
+# standard library; the Anthropic Messages API is one urllib POST.
+#
+# Optional, for model-based symptom extraction:
+#   export ANTHROPIC_API_KEY=sk-ant-...
+#   export PATIENTTRIAGE_MODEL=claude-sonnet-4-6      (default)
+#   export PATIENTTRIAGE_PROVIDER=local               (force offline)
+# Without a key the deterministic matcher serves and the console says so.
