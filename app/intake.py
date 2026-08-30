@@ -311,6 +311,15 @@ _PAGE = r"""<!DOCTYPE html>
       <label>Explicitly denied &mdash; kept, never discarded</label>
       <div class="chips" id="denyChips"><span class="muted">none</span></div>
     </div>
+    <div style="margin-top:12px">
+      <label>Stated concerns &mdash; what the patient believes is happening</label>
+      <div class="chips" id="concernChips"><span class="muted">none</span></div>
+      <p class="hint" style="margin-top:6px">
+        A concern is not a finding and not a diagnosis. Saying &ldquo;heart
+        attack&rdquo; carries weight of its own and adds no symptom the patient
+        did not describe.
+      </p>
+    </div>
 
     <div class="grid2" style="margin-top:14px">
       <div><label>Add a term manually</label>
@@ -425,8 +434,10 @@ const flags = {
   breathlessness_between_words:"unknown",
   unable_to_speak_full_sentence:"unknown", can_communicate:"unknown"
 };
-let symptoms = [];   /* {term, channel} */
-let denied   = [];   /* {term, channel} */
+let symptoms = [];   /* {term, channel, evidence} */
+let denied   = [];   /* {term, channel, evidence} */
+let concerns = [];   /* {concern, label, evidence, channel} */
+let baselineHints = [];
 let camStats = null, audStats = null;
 
 /* ============ small maths helpers ============ */
@@ -771,9 +782,16 @@ function drawCameraQuestions(f){
     v => { flags.droop_observed = v; },
     null, c ? c.corroboration : "", c ? c.strength : null
   ));
+  let baselineSrc = "no sensor can answer this — it decides stroke versus ordinary appearance";
+  if(baselineHints.length){
+    baselineSrc += "\n\nTHE PATIENT'S OWN WORDS MENTION: " +
+      baselineHints.map(h=>h.hint).join(", ") +
+      "\n  \"" + baselineHints[0].evidence + "\"" +
+      "\nAsk whether the facial difference is related to that before answering.";
+  }
   box.appendChild(question(
     "Is this different from how the patient normally looks?",
-    "no sensor can answer this — it decides stroke versus ordinary appearance",
+    baselineSrc,
     ["new","normal for them","cannot say"], "__baseline__", null, null,
     v => {
       if(v==="new"){ flags.baseline_known="yes"; flags.baseline_asymmetry_present="no";
@@ -909,21 +927,31 @@ async function readText(channel){
       const term = item.term || item;
       const src  = item.channel || ch();
       if(!symptoms.some(s=>s.term===term) && !denied.some(s=>s.term===term))
-        symptoms.push({term, channel:src});
+        symptoms.push({term, channel:src, evidence:item.evidence||""});
     });
     (d.denied||[]).forEach(item=>{
       const term = item.term || item;
       const src  = item.channel || ch();
       symptoms = symptoms.filter(s=>s.term!==term);
-      if(!denied.some(s=>s.term===term)) denied.push({term, channel:src});
+      if(!denied.some(s=>s.term===term))
+        denied.push({term, channel:src, evidence:item.evidence||""});
     });
+    (d.concerns||[]).forEach(c=>{
+      if(!concerns.some(x=>x.concern===c.concern)) concerns.push(c);
+    });
+    const hintsBefore = baselineHints.length;
+    (d.baseline_hints||[]).forEach(h=>{
+      if(!baselineHints.some(x=>x.hint===h.hint)) baselineHints.push(h);
+    });
+    if(baselineHints.length !== hintsBefore) refreshCandidates();
     if(d.pain_score!==null && d.pain_score!==undefined && !$("pain").value)
       $("pain").value = d.pain_score;
     drawChips();
   }catch(e){ /* the page stays usable without the reader */ }
 }
 
-$("clearSx").onclick=()=>{ symptoms=[]; denied=[]; lastRead=""; drawChips(); };
+$("clearSx").onclick=()=>{ symptoms=[]; denied=[]; concerns=[]; baselineHints=[];
+  lastRead=""; drawChips(); refreshCandidates(); };
 
 function drawChips(){
   const a=$("sxChips"), b=$("denyChips");
@@ -937,14 +965,29 @@ function drawChips(){
   denied.forEach(s=>b.appendChild(chip(s,true,()=>{
     denied=denied.filter(x=>x.term!==s.term); drawChips();
   })));
+  const cc=$("concernChips");
+  cc.innerHTML = concerns.length ? "" : '<span class="muted">none</span>';
+  concerns.forEach(c=>{
+    const el=document.createElement("div"); el.className="chip";
+    const b=document.createElement("b"); b.textContent=c.label||c.concern;
+    b.title = c.evidence ? 'heard: "'+c.evidence+'"' : "";
+    const e=document.createElement("em"); e.textContent=c.channel||"voice";
+    const x=document.createElement("span"); x.textContent="×";
+    x.title="not what the patient meant";
+    x.onclick=()=>{ concerns=concerns.filter(y=>y.concern!==c.concern); drawChips(); };
+    el.appendChild(b); el.appendChild(e); el.appendChild(x); cc.appendChild(el);
+  });
+
   $("sxPill").textContent = symptoms.length + " term" +
-    (symptoms.length===1?"":"s") + (denied.length ? ", "+denied.length+" denied" : "");
+    (symptoms.length===1?"":"s") + (denied.length ? ", "+denied.length+" denied" : "") +
+    (concerns.length ? ", "+concerns.length+" concern" : "");
 }
 
 function chip(s,isDeny,onX){
   const c=document.createElement("div");
   c.className="chip"+(isDeny?" deny":"");
   const b=document.createElement("b"); b.textContent=s.term;
+  if(s.evidence) b.title = 'heard: "'+s.evidence+'"';
   const e=document.createElement("em"); e.textContent=s.channel;
   const x=document.createElement("span"); x.textContent="×";
   x.title=isDeny?"remove entirely":"move to denied";
@@ -974,6 +1017,8 @@ $("go").onclick = async () => {
     typed_symptoms:$("typed").value,
     added_symptoms:symptoms.map(s=>s.term),
     denied_symptoms:denied.map(s=>s.term),
+    added_concerns:concerns.map(c=>c.concern),
+    removed_concerns:[],
     symptom_channels:symptoms.reduce((m,s)=>(m[s.term]=s.channel,m),{}),
     pain_score:num("pain"),
     heart_rate:num("heart_rate"), respiratory_rate:num("respiratory_rate"),
@@ -1015,6 +1060,11 @@ function drawResult(d){
        (d.symptoms.length ? d.symptoms.join("\n") : "none recognised")+'</div></div>'+
        '<div><label>Denials recorded — never subtract</label><div class="readout">'+
        (d.denies.length ? d.denies.join("\n") : "none")+'</div></div></div>';
+  if(d.stated_concerns && d.stated_concerns.length){
+    h += '<div style="margin-top:12px"><label>Stated concerns — the patient\'s own '+
+         'account, weighted as a concern and not as a diagnosis</label>'+
+         '<div class="readout">'+d.stated_concerns.join("\n")+'</div></div>';
+  }
 
   if(d.safety_rules && d.safety_rules.length){
     h+='<div class="rulebox"><b>Safety rules fired</b><br>'+d.safety_rules.join("<br>")+

@@ -212,6 +212,16 @@ class SelfReport:
     symptom_duration_hours: Optional[float] = None
     can_communicate: Tri = Tri.UNKNOWN
 
+    # What the patient believes is happening to them, in their own framing:
+    # "I am having a heart attack", "I think I'm dying".
+    #
+    # Deliberately separate from `symptoms`. A concern is not a finding and it
+    # is not a diagnosis. It carries its own modest weight because a patient's
+    # own account of a life-threatening event is information a nurse acts on,
+    # and dismissing a sense of impending doom is a known way to miss people.
+    # It never manufactures a symptom the patient did not describe.
+    stated_concerns: List[str] = field(default_factory=list)
+
     def has_symptom(self, name: str) -> bool:
         return name.lower() in [s.lower() for s in self.symptoms]
 

@@ -114,18 +114,30 @@ class IntakeHandler(BaseHTTPRequestHandler):
 
             tagged, seen = [], set()
             denied_tagged, denied_seen = [], set()
+            concerns, concern_seen = [], set()
+            hints, hint_seen = [], set()
             for text, channel in ((spoken, "voice"), (typed, "typed")):
                 if not text:
                     continue
-                reported, denied = self.reader.read(text)
-                for term in reported:
+                found = self.reader.read_full(text)
+                for term in found.reported:
                     if term not in seen:
                         seen.add(term)
-                        tagged.append({"term": term, "channel": channel})
-                for term in denied:
+                        tagged.append({"term": term, "channel": channel,
+                                       "evidence": found.evidence.get(term, "")})
+                for term in found.denied:
                     if term not in denied_seen:
                         denied_seen.add(term)
-                        denied_tagged.append({"term": term, "channel": channel})
+                        denied_tagged.append({"term": term, "channel": channel,
+                                              "evidence": found.evidence.get(term, "")})
+                for c in found.concerns:
+                    if c["concern"] not in concern_seen:
+                        concern_seen.add(c["concern"])
+                        concerns.append(dict(c, channel=channel))
+                for h in found.baseline_hints:
+                    if h["hint"] not in hint_seen:
+                        hint_seen.add(h["hint"])
+                        hints.append(dict(h, channel=channel))
 
             # A term denied on one channel and reported on another is a
             # conflict in the account itself. It stays REPORTED and the denial
@@ -135,6 +147,13 @@ class IntakeHandler(BaseHTTPRequestHandler):
             self._json(200, {
                 "reported": tagged,
                 "denied": denied_tagged,
+                # What the patient believes is happening, kept separate from
+                # what they describe feeling.
+                "concerns": concerns,
+                # Phrases in the patient's own words that may explain a facial
+                # difference as pre-existing. A prompt on the baseline
+                # question, never an answer to it.
+                "baseline_hints": hints,
                 "pain_score": self.reader.pain_score(combined),
                 "duration_hours": self.reader.duration_hours(combined),
             })

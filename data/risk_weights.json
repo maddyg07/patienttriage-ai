@@ -159,6 +159,33 @@
       "domain": "infection"
     }
   },
+  "_stated_concern_note": "What the patient believes is happening. Weighted as a CONCERN, not as a finding and never as a diagnosis. Points are modest on purpose: enough that a patient saying 'I am having a heart attack' is not ignored, not so much that naming a disease can drive the band on its own. The symptoms that would actually justify escalation still have to be described.",
+  "stated_concerns": {
+    "heart attack": {
+      "points": 14,
+      "domain": "circulatory"
+    },
+    "stroke": {
+      "points": 14,
+      "domain": "neurological"
+    },
+    "anaphylaxis": {
+      "points": 16,
+      "domain": "respiratory"
+    },
+    "cannot breathe": {
+      "points": 14,
+      "domain": "respiratory"
+    },
+    "overdose": {
+      "points": 14,
+      "domain": "general"
+    },
+    "dying": {
+      "points": 10,
+      "domain": "general"
+    }
+  },
   "observed": {
     "consciousness_unresponsive": {
       "points": 30,

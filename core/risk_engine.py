@@ -120,6 +120,7 @@ class RiskEngine:
         raw += self._score_vitals(patient)
         raw += self._score_symptoms(patient)
         raw += self._score_pain(patient)
+        raw += self._score_concerns(patient)
         raw += self._score_observed(patient)
         raw += self._score_voice(patient)
         raw += self._score_facial(patient)
@@ -263,6 +264,29 @@ class RiskEngine:
                 out.append(Contribution(
                     f"reports: {key}", float(spec["points"]),
                     "symptoms", spec["domain"]))
+        return out
+
+    def _score_concerns(self, patient: Patient) -> List[Contribution]:
+        """
+        What the patient believes is happening to them.
+
+        A patient saying "I am having a heart attack" is telling us something
+        a nurse would act on, and a system that discards it because the words
+        are not a clinical finding has thrown away the most alarming sentence
+        in the conversation. It is also not a diagnosis, so the weight is
+        modest: enough not to be ignored, not enough to let naming a disease
+        drive the band by itself. The symptoms that would justify escalation
+        still have to be described.
+        """
+        table = self.weights.get("stated_concerns", {})
+        out: List[Contribution] = []
+        for concern in patient.self_report.stated_concerns:
+            spec = table.get(concern)
+            if not spec:
+                continue
+            out.append(Contribution(
+                f"patient states: {concern} (their account, not a diagnosis)",
+                float(spec["points"]), "concern", spec["domain"]))
         return out
 
     def _score_pain(self, patient: Patient) -> List[Contribution]:

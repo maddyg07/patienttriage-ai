@@ -1,0 +1,109 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION CONFIGURATION. A vocabulary for a prototype, not a clinical NLP resource. It has not been validated against real patient speech and will miss things.",
+  "_why_this_file_replaced_a_synonym_list": "The first version matched fixed phrases. A patient said 'my heart is paining a lot' and the console recognised nothing, because that phrase was not on the list and no list is ever long enough. People do not describe symptoms in clinical vocabulary. Matching now works on SITE plus SENSATION -- a body part near a word for hurting -- so 'my heart is paining', 'chest hurts', 'pain in my chest' and 'tightness across my chest' all reach the same term without any of them being written down in advance.",
+
+  "sites": {
+    "chest pain":     ["chest", "heart", "sternum", "ribcage", "rib cage", "left arm", "jaw and chest"],
+    "abdominal pain": ["stomach", "tummy", "belly", "abdomen", "abdominal", "gut", "guts"],
+    "headache":       ["head", "temple", "temples", "skull", "forehead"],
+    "sore throat":    ["throat"],
+    "wrist pain":     [],
+    "back pain":      ["back", "spine", "lower back"]
+  },
+
+  "sensations": [
+    "pain", "paining", "pains", "painful", "hurt", "hurts", "hurting",
+    "ache", "aches", "aching", "achy", "sore", "soreness",
+    "tight", "tightness", "pressure", "squeezing", "crushing", "heavy",
+    "burning", "burns", "stabbing", "cramping", "cramp", "discomfort",
+    "killing me", "on fire", "throbbing", "pounding"
+  ],
+  "site_sensation_window": 6,
+
+  "direct_phrases": {
+    "breathlessness": ["short of breath", "shortness of breath", "cant breathe", "can not breathe",
+                       "cannot breathe", "cant catch my breath", "breathless", "out of breath",
+                       "winded", "puffed", "gasping", "struggling to breathe", "hard to breathe",
+                       "difficulty breathing", "trouble breathing"],
+    "wheeze":         ["wheezing", "wheezy", "whistling in my chest"],
+    "cough":          ["coughing", "cough"],
+    "slurred speech": ["speech is slurred", "slurring", "slurred", "words come out wrong",
+                       "cant get my words out", "speech went funny", "talking funny"],
+    "facial droop":   ["face has dropped", "face dropped", "face is drooping", "drooping",
+                       "side of my face", "face went numb", "face feels numb", "droopy"],
+    "unilateral weakness": ["one side is weak", "weak on one side", "arm went weak",
+                            "leg went weak", "cant move my arm", "cant move my leg",
+                            "one arm is weak", "left side is weak", "right side is weak"],
+    "arm weakness":   ["arm is weak", "arm feels weak", "weakness in my arm"],
+    "numbness":       ["numb", "numbness", "pins and needles", "tingling"],
+    "confusion":      ["confused", "muddled", "not making sense", "disoriented", "rambling",
+                       "not himself", "not herself", "cant think straight"],
+    "lethargy":       ["floppy", "very drowsy", "hard to wake", "no energy at all", "lethargic",
+                       "cant stay awake", "so weak i cant"],
+    "dizziness":      ["dizzy", "light headed", "lightheaded", "room is spinning", "vertigo",
+                       "about to faint", "nearly passed out"],
+    "nausea":         ["nauseous", "nausea", "feel sick", "feeling sick", "queasy",
+                       "sick to my stomach", "want to be sick"],
+    "vomiting":       ["throwing up", "threw up", "been sick", "vomited", "vomiting", "puking"],
+    "fever":          ["fever", "feverish", "temperature", "burning up", "hot and cold",
+                       "running a temperature"],
+    "rigors":         ["shivering", "shakes", "chills", "rigors", "shaking with cold"],
+    "sweating":       ["sweating", "sweaty", "clammy", "drenched in sweat", "cold sweat"],
+    "seizure":        ["seizure", "fit", "convulsion", "convulsing", "blacked out shaking"],
+    "poor feeding":   ["not feeding", "wont feed", "will not feed", "not taking milk",
+                       "off her feeds", "off his feeds"],
+    "swelling":       ["swollen", "swelling", "puffed up"],
+    "head strike":    ["hit my head", "banged my head", "knocked my head", "head injury"],
+    "thunderclap onset": ["came on suddenly", "sudden onset", "hit me all at once",
+                          "like a thunderclap", "out of nowhere", "all of a sudden"],
+    "worst headache of life": ["worst headache", "worst headache ever", "worst headache of my life",
+                               "worst pain in my head"],
+    "chest tightness": ["tight chest", "band around my chest"],
+    "chest pain":     ["angina"]
+  },
+
+  "stated_concerns": {
+    "heart attack":     {"label": "believes they are having a heart attack",
+                         "aliases": ["heart attack", "cardiac arrest", "my heart is failing",
+                                     "heart is giving out", "mi"]},
+    "stroke":           {"label": "believes they are having a stroke",
+                         "aliases": ["stroke", "brain attack", "having a stroke"]},
+    "anaphylaxis":      {"label": "believes they are having a severe allergic reaction",
+                         "aliases": ["allergic reaction", "anaphylaxis", "anaphylactic",
+                                     "throat is closing", "throat closing up"]},
+    "overdose":         {"label": "reports an overdose or poisoning",
+                         "aliases": ["overdose", "took too many", "poisoned", "swallowed"]},
+    "cannot breathe":   {"label": "states they cannot breathe",
+                         "aliases": ["i cant breathe", "i can not breathe", "i cannot breathe"]},
+    "dying":            {"label": "states a sense of impending doom",
+                         "aliases": ["i think im dying", "i am dying", "im going to die",
+                                     "feel like im dying", "something is very wrong"]}
+  },
+  "_stated_concerns_note": "A concern is what the patient BELIEVES is happening. It is recorded as a concern and weighted as one. It never becomes a finding: saying 'heart attack' does not add a chest pain the patient did not describe, and it never becomes a diagnosis. A sense of impending doom is included because patients are sometimes right about it and dismissing it is a known way to miss people.",
+
+  "baseline_hints": {
+    "accident":        ["accident", "car crash", "road accident", "collision", "crash"],
+    "injury":          ["injury", "injured", "got hurt", "trauma"],
+    "burn":            ["burn", "burnt", "burned", "acid", "scalded", "chemical"],
+    "surgery":         ["surgery", "operation", "operated", "post op", "post-op"],
+    "congenital":      ["born with", "since birth", "birth defect", "congenital", "always had"],
+    "previous stroke": ["previous stroke", "had a stroke before", "old stroke", "stroke in 20"],
+    "palsy":           ["palsy", "bells palsy", "paralysis", "paralysed"],
+    "long standing":   ["always been", "always looked", "since childhood", "for years",
+                        "all my life", "scar", "scarring", "deformed", "deformity"]
+  },
+  "_baseline_hints_note": "Phrases in the patient's own words that may explain a facial difference as pre-existing rather than acute. They do not set the baseline answer and they do not touch the score. They put a prompt on the baseline question, because the operator in our first live test clicked 'new' while the patient was in the middle of saying they had been in an accident.",
+
+  "negation_markers": [
+    "no ", "not ", "without ", "denies ", "deny ", "dont have", "don t have",
+    "doesnt have", "havent had", "never had", "free of ", "nothing ", "none of "
+  ],
+  "clause_breaks": [",", ";", ".", " and ", " but ", " with ", " also ", " plus ",
+                    " then ", " however ", " although "],
+
+  "duration_patterns": {
+    "hour": 1, "hours": 1, "hr": 1, "hrs": 1,
+    "day": 24, "days": 24, "week": 168, "weeks": 168,
+    "minute": 0.0167, "minutes": 0.0167, "min": 0.0167, "mins": 0.0167
+  }
+}

@@ -179,7 +179,7 @@ def _parse_observed(raw: Optional[dict], where: str) -> ObservedSignals:
 
 _SELF_REPORT_KEYS = {
     "chief_complaint", "symptoms", "denies", "pain_score",
-    "symptom_duration_hours", "can_communicate",
+    "symptom_duration_hours", "can_communicate", "stated_concerns",
 }
 
 
@@ -194,6 +194,7 @@ def _parse_self_report(raw: Optional[dict], where: str) -> SelfReport:
         pain_score=raw.get("pain_score"),
         symptom_duration_hours=raw.get("symptom_duration_hours"),
         can_communicate=_tri(raw.get("can_communicate"), f"{where}.self_report"),
+        stated_concerns=raw.get("stated_concerns", []) or [],
     )
 
 

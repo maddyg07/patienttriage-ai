@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.config import HospitalConfig
+from core.narrative import NarrativeFindings, NarrativeReader
 from core.patient_loader import PatientDataError, parse_patient
 from core.ratchet import Ratchet
 from core.risk_engine import RiskEngine, explain
@@ -72,107 +73,15 @@ def load_intake_config() -> dict:
 # Free text -> symptoms
 # ---------------------------------------------------------------------------
 
-class SymptomReader:
+class SymptomReader(NarrativeReader):
     """
-    Extracts symptom terms from typed or dictated text.
+    Kept as a name because run_intake and the Phase 17 tests import it.
 
-    The vocabulary is NOT a new list. It is the key set of the `symptoms` block
-    in data/risk_weights.json, so a term the reader can recognise is exactly a
-    term the engine can score, and adding a symptom in one place adds it in
-    both. The synonym map in data/intake_config.json only widens the surface
-    of the same terms.
-
-    Negation is handled explicitly. "no chest pain" must not become a chest
-    pain symptom, and it must not vanish either -- it becomes a DENIAL, which
-    the conflict detector in core/risk_engine.py reads. A patient telling us
-    what they do not have is information.
-
-    This is a deliberately shallow matcher. It is auditable in one sitting,
-    which an NLP layer would not be, and every term it produces is shown back
-    to the operator for correction before anything is scored.
+    The behaviour now lives in core/narrative.py. The first implementation was
+    a fixed phrase list and it recognised nothing in the sentence "my heart is
+    paining a lot", which is not an unusual way to describe chest pain. A list
+    is always too short; matching a body part near a word for hurting is not.
     """
-
-    def __init__(self, config: Optional[dict] = None, weights: Optional[dict] = None):
-        self.config = config or load_intake_config()
-        weights = weights or _load(WEIGHTS_FILE)
-        self.vocabulary: List[str] = list(weights["symptoms"].keys())
-        self.synonyms: Dict[str, List[str]] = self.config.get("symptom_synonyms", {})
-        self.negations: List[str] = self.config.get("negation_markers", [])
-        self.durations: Dict[str, float] = self.config.get("duration_patterns", {})
-
-    def _phrases_for(self, term: str) -> List[str]:
-        return [term] + [s.lower() for s in self.synonyms.get(term, [])]
-
-    def read(self, text: str) -> Tuple[List[str], List[str]]:
-        """Return (reported, denied). A term never appears in both."""
-        if not text:
-            return [], []
-        lowered = " " + re.sub(r"\s+", " ", text.lower().strip()) + " "
-
-        reported: List[str] = []
-        denied: List[str] = []
-        for term in self.vocabulary:
-            hit_at = None
-            for phrase in self._phrases_for(term):
-                idx = lowered.find(phrase)
-                if idx != -1:
-                    hit_at = idx
-                    break
-            if hit_at is None:
-                continue
-            # Scope the negation to the CLAUSE, not to a fixed number of
-            # characters. "denies breathlessness, temperature three days"
-            # denies breathlessness and reports a fever; a fixed lookback
-            # window denies both, because the marker is still inside it.
-            window = self._clause_before(lowered, hit_at)
-            if any(marker in window for marker in self.negations):
-                denied.append(term)
-            else:
-                reported.append(term)
-        return reported, denied
-
-    # Boundaries that end a clause. A negation does not survive them.
-    _CLAUSE_BREAKS = (",", ";", ".", " and ", " but ", " with ", " also ",
-                      " plus ", " then ", " however ")
-
-    def _clause_before(self, text: str, index: int) -> str:
-        """The text between the nearest clause boundary and the match."""
-        start = 0
-        for marker in self._CLAUSE_BREAKS:
-            pos = text.rfind(marker, 0, index)
-            if pos != -1:
-                start = max(start, pos + len(marker))
-        return text[start:index]
-
-    def duration_hours(self, text: str) -> Optional[float]:
-        """Pull 'for three days' / 'about 2 hours' out of free text."""
-        if not text:
-            return None
-        words = {
-            "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4,
-            "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-        }
-        lowered = text.lower()
-        pattern = r"(\d+(?:\.\d+)?|" + "|".join(words) + r")\s+(" + \
-                  "|".join(self.durations) + r")\b"
-        match = re.search(pattern, lowered)
-        if not match:
-            return None
-        amount_raw, unit = match.group(1), match.group(2)
-        amount = float(words.get(amount_raw, amount_raw)) if not amount_raw.isdigit() \
-            else float(amount_raw)
-        return round(amount * self.durations[unit], 3)
-
-    def pain_score(self, text: str) -> Optional[int]:
-        """Recognise 'seven out of ten' and '8/10'."""
-        if not text:
-            return None
-        lowered = text.lower()
-        m = re.search(r"\b(\d{1,2})\s*(?:/|out of)\s*10\b", lowered)
-        if m:
-            value = int(m.group(1))
-            return value if 0 <= value <= 10 else None
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +119,16 @@ def build_patient_record(payload: dict) -> dict:
         payload.get("typed_symptoms", ""),
     ])).strip()
 
-    reported, denied = reader.read(narrative)
+    findings = reader.read_full(narrative)
+    reported, denied = list(findings.reported), list(findings.denied)
+
+    # Concerns the operator has not struck out. What the patient believes is
+    # happening travels separately from what they describe feeling.
+    struck = set(payload.get("removed_concerns", []) or [])
+    concerns = [c["concern"] for c in findings.concerns if c["concern"] not in struck]
+    for extra in payload.get("added_concerns", []) or []:
+        if extra not in concerns:
+            concerns.append(extra)
 
     # Operator corrections win over the text reader in both directions.
     for term in payload.get("added_symptoms", []) or []:
@@ -261,6 +179,7 @@ def build_patient_record(payload: dict) -> dict:
             "pain_score": pain,
             "symptom_duration_hours": duration,
             "can_communicate": _tri_field(payload, "can_communicate"),
+            "stated_concerns": concerns,
         },
         "vitals": vitals,
         "facial": {
@@ -354,6 +273,7 @@ def serialise(patient: Patient, assessment: Assessment,
         "chief_complaint": patient.self_report.chief_complaint,
         "symptoms": patient.self_report.symptoms,
         "denies": patient.self_report.denies,
+        "stated_concerns": patient.self_report.stated_concerns,
 
         "risk_score": round(assessment.risk_score, 1),
         "band_code": band.code if band else None,
@@ -405,7 +325,8 @@ def assess_payload(payload: dict, hospital: str = "medium_ed") -> Dict[str, Any]
 
 
 __all__ = [
-    "IntakeSession", "SymptomReader", "assess_payload",
+    "IntakeSession", "NarrativeFindings", "NarrativeReader",
+    "SymptomReader", "assess_payload",
     "build_patient", "build_patient_record", "load_intake_config",
     "serialise", "PatientDataError",
 ]
