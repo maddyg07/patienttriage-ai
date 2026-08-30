@@ -150,3 +150,59 @@ honestly is something a deployment can plan around; a gap described as
 | `data/privacy_config.json` | every value above, with its reasoning |
 | `tests/test_privacy.py` | 16 checks, including a planted-identifier teeth test |
 | `python -m scripts.run_triage --privacy` | the demonstration |
+
+
+---
+
+## Live intake capture (Phase 17)
+
+`scripts/run_intake.py` adds a camera and a microphone. That is the largest
+privacy surface in this project, so what it does and does not do is set out
+here rather than left to be inferred.
+
+### What is captured
+
+A video frame, at the moment the operator presses **Capture frame**. An audio
+stream, while the operator holds the microphone open. A speech transcript, if
+the browser supports recognition.
+
+### Where it goes
+
+Nowhere. Specifically:
+
+* **Frames** are drawn to an off-screen canvas, reduced to a luminance grid,
+  and discarded when the next frame replaces them. No frame is encoded, posted
+  or written.
+* **Audio** never leaves the browser tab. The analyser reads amplitude in
+  memory; there is no recorder, no blob and no upload.
+* **The transcript** stays in the page. It is posted only because the operator
+  left it in the box and it becomes the chief complaint, which is ordinary
+  clinical text, not a recording.
+* **The server** writes no file. It holds one in-memory session and forgets it
+  when the process stops.
+
+`data/intake_config.json` declares this as `capture_retention`, all zeros, and
+`tests/test_intake.py::TestIntakeWritesNothing` fails if a session creates a
+file. A policy nothing checks is a sentence, not a control.
+
+### What crosses the wire
+
+Confirmed clinical flags. `asymmetry_observed: yes`, `baseline_known: unknown`,
+`spo2: 91`. The payload is the same shape as one record in
+`data/patients.json`, which is why the same loader validates it.
+
+### Why loopback only
+
+The server binds `127.0.0.1` and is never exposed on a network interface.
+Browsers grant camera and microphone access on a loopback origin without a
+certificate, which is what makes this work with no install and no HTTPS setup.
+It also means the console cannot be reached from another machine.
+
+### What this is not
+
+It is not a compliance claim. A production deployment would need consent
+capture before the camera starts, a retention schedule for anything that is
+kept, a DPIA covering biometric processing, and a decision on whether facial
+analysis constitutes sensitive personal data under the DPDP Act — which, for a
+system inferring health status from appearance, it very likely does. None of
+that is implemented here and none of it should be assumed.

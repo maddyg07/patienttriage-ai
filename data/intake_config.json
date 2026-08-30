@@ -1,0 +1,72 @@
+{
+  "_disclaimer": "SIMULATED DEMONSTRATION CONFIGURATION. The capture thresholds below are crude signal-processing settings chosen so a live demo produces a usable candidate reading on ordinary laptop hardware. They are not measurement standards and carry no clinical authority.",
+  "_what_the_sensors_are_for": "The camera and microphone produce CANDIDATE signals that an operator confirms or corrects. They are not detectors and nothing accepts their output unreviewed. The reasoning that matters happens after confirmation, in core/facial.py and core/risk_engine.py, and it would happen identically if the candidate came from a clinical-grade device or from a nurse typing what they saw.",
+
+  "camera": {
+    "frame_width": 480,
+    "analysis_region": {
+      "x_fraction": 0.22,
+      "y_fraction": 0.14,
+      "width_fraction": 0.56,
+      "height_fraction": 0.62
+    },
+    "symmetry_index_thresholds": {
+      "asymmetry_candidate": 0.16,
+      "strong_candidate": 0.26
+    },
+    "min_brightness": 28,
+    "max_brightness": 232,
+    "_note": "The symmetry index compares the luminance profile of the left and right halves of the analysis region after mirroring. It is a crude measure and is affected by lighting, head angle and camera position. It is deliberately labelled 'candidate' everywhere it is shown."
+  },
+
+  "audio": {
+    "sample_ms": 60,
+    "silence_rms": 0.012,
+    "pause_ms_for_break": 320,
+    "breaks_for_breathless": 3,
+    "max_phrase_ms_for_full_sentence": 2600,
+    "_note": "Breathlessness is estimated from the pattern of speech and pause in the recorded utterance: how often the speaker breaks, and how long they sustain a phrase. It is not a respiratory measurement."
+  },
+
+  "negation_markers": [
+    "no ", "not ", "without ", "denies ", "deny ", "don't have", "dont have",
+    "doesn't have", "haven't had", "havent had", "never had", "free of "
+  ],
+
+  "symptom_synonyms": {
+    "chest pain": ["pain in my chest", "chest hurts", "tightness in chest", "crushing pain"],
+    "breathlessness": ["short of breath", "shortness of breath", "can't breathe", "cant breathe", "breathless", "winded", "puffed"],
+    "slurred speech": ["speech is slurred", "words come out wrong", "slurring"],
+    "facial droop": ["face has dropped", "face dropped", "side of my face", "drooping"],
+    "unilateral weakness": ["one side is weak", "weak on one side", "arm went weak", "leg went weak"],
+    "confusion": ["muddled", "confused", "not making sense", "disoriented"],
+    "abdominal pain": ["stomach pain", "tummy pain", "belly pain", "stomach hurts"],
+    "headache": ["head hurts", "my head is pounding"],
+    "worst headache of life": ["worst headache", "worst headache ever", "worst headache of my life"],
+    "thunderclap onset": ["came on suddenly", "sudden onset", "hit me all at once", "like a thunderclap"],
+    "vomiting": ["throwing up", "been sick", "vomited"],
+    "dizziness": ["light headed", "lightheaded", "dizzy", "room is spinning"],
+    "fever": ["temperature", "feverish", "burning up", "hot and cold"],
+    "rigors": ["shivering", "shakes", "chills"],
+    "wheeze": ["wheezing", "whistling in my chest"],
+    "seizure": ["fit", "convulsion", "blacked out shaking"]
+  },
+
+  "duration_patterns": {
+    "hour": 1, "hours": 1, "day": 24, "days": 24, "week": 168, "weeks": 168,
+    "minute": 0.0167, "minutes": 0.0167
+  },
+
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8770,
+    "_note": "Bound to loopback only. The intake page is never exposed on a network interface. Browsers permit camera and microphone access on http://127.0.0.1 without a certificate, which is why this works with no install and no HTTPS setup."
+  },
+
+  "capture_retention": {
+    "frames_written_to_disk": 0,
+    "audio_written_to_disk": 0,
+    "transcript_written_to_disk": 0,
+    "_note": "Nothing captured is persisted. Frames are analysed in the browser canvas and discarded; audio never leaves the browser; the transcript is held in the page and is not written by the server. Only the confirmed clinical FLAGS are posted to the engine. See docs/privacy.md."
+  }
+}

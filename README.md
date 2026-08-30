@@ -114,6 +114,34 @@ Built in phases. Currently at **Phase 16 — docs and privacy**.
 | 16 | Docs & privacy | done |
 | 17 | Demo mode | next |
 
+## Live intake — camera, microphone, voice
+
+```bash
+python -m scripts.run_intake
+```
+
+Opens a console at `http://127.0.0.1:8770/`. Point a camera at a face, speak
+the symptoms, and the real engine scores them: the same risk engine, the same
+uncertainty model, the same safety rules and the same ratchet that
+`scripts/run_triage.py` uses. The page holds no clinical logic and no
+thresholds — it captures signals, an operator confirms them, and the flags are
+posted to the engine.
+
+Chrome or Edge for speech recognition; every other channel works anywhere, and
+typing is always available. Nothing captured is written to disk.
+
+The point of the live demo is not the detector. Capture the same asymmetric
+face three times and answer the baseline question differently each time:
+
+| Baseline answer | Outcome |
+| --- | --- |
+| new | **L4 CODE** — a hard rule floors it, above what the score alone gives |
+| normal for them | **L1 WATCH** — triaged for what they actually came in with |
+| cannot say | **L2 LOOK**, confidence ~60%, uncertainty drivers named |
+
+Same pixels, three answers. A better detector changes none of it. See
+`docs/demo.md` for the four-minute runbook.
+
 ## Running it
 
 Requires Python 3.10 or newer. There are still no third-party dependencies.

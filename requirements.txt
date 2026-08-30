@@ -9,3 +9,9 @@
 #                      # `python -m scripts.run_tests` works on a clean
 #                      # machine with no network. pytest discovers and runs
 #                      # tests/ unchanged if you prefer it.
+
+# Phase 17 -- live intake with camera, microphone and speech.
+# Still nothing to install. The capture layer is the browser's own
+# getUserMedia, Web Audio and SpeechRecognition APIs; the server is
+# http.server from the standard library. Speech recognition needs
+# Chrome or Edge; every other channel works in any browser.
